@@ -1,0 +1,12 @@
+[package]
+authors = ["Davide Di Carlo <daddinuz@gmail.com>"]
+description = "A dynamic container that combines the characteristics of a Vec and a LinkedList"
+name = "array_list"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+keywords = ["collections", "vec", "xor", "linked-list", "unrolled"]
+rust-version = "1.71.1"
+repository = "https://github.com/daddinuz/array_list"
+
+[dependencies]
