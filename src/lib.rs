@@ -412,6 +412,58 @@ where
         self.len += 1;
     }
 
+    /// Moves all elements from other to the end of the list.
+    ///
+    /// This reuses all the nodes from other and moves them into self.
+    /// After this operation, other becomes empty.
+    ///
+    /// # Complexity
+    /// - Time complexity: O(1)
+    /// - Memory complexity: O(1)
+    ///
+    /// # Example
+    /// ```rust
+    /// use array_list::ArrayList;
+    ///
+    /// let mut list1: ArrayList<i32, 4> = ArrayList::new();
+    /// list1.push_back(1);
+    /// list1.push_back(2);
+    ///
+    /// let mut list2: ArrayList<i32, 4> = ArrayList::new();
+    /// list2.push_back(3);
+    /// list2.push_back(4);
+    ///
+    /// list1.append(&mut list2);
+    ///
+    /// assert_eq!(list1.len(), 4);
+    /// assert_eq!(list1.get(0), Some(&1));
+    /// assert_eq!(list1.get(1), Some(&2));
+    /// assert_eq!(list1.get(2), Some(&3));
+    /// assert_eq!(list1.get(3), Some(&4));
+    /// ```
+    pub fn append(&mut self, other: &mut Self) {
+        if other.is_empty() {
+            return;
+        }
+
+        if self.is_empty() {
+            *self = std::mem::replace(other, Self::new());
+            return;
+        }
+
+        let mut self_tail = self.tail.unwrap();
+
+        let mut other_head = other.head.take().unwrap();
+        let other_tail = other.tail.take().unwrap();
+
+        unsafe { *self_tail.as_mut().link_mut() ^= other_head.as_ptr() as usize };
+        unsafe { *other_head.as_mut().link_mut() ^= self_tail.as_ptr() as usize };
+
+        self.tail = Some(other_tail);
+        self.len += other.len;
+        other.len = 0;
+    }
+
     /// Removes and returns the first element of the `ArrayList`, if any.
     ///
     /// This method removes the first element of the list and adjusts the head pointer
@@ -1933,5 +1985,113 @@ mod tests {
         assert_eq!(sut.len(), 2);
         assert_eq!(sut.front(), Some(&100));
         assert_eq!(sut.back(), Some(&200));
+    }
+
+    #[test]
+    fn append_combines_two_lists() {
+        // Create and populate the first list
+        let mut sut: ArrayList<i32, 2> = ArrayList::new();
+        sut.push_back(10);
+        sut.push_back(20);
+        sut.push_back(30);
+
+        // Create and populate the second list
+        let mut other: ArrayList<i32, 2> = ArrayList::new();
+        other.push_back(40);
+        other.push_back(50);
+        other.push_back(60);
+
+        // Append the second list into the first
+        sut.append(&mut other);
+        assert!(other.is_empty());
+        assert_eq!(other.len(), 0);
+
+        other.push_back(100);
+        other.push_back(200);
+        assert_eq!(other.len(), 2);
+        assert_eq!(other.front(), Some(&100));
+        assert_eq!(other.back(), Some(&200));
+
+        // Verify the combined list
+        assert_eq!(sut.len(), 6);
+        assert_eq!(sut.get(0), Some(&10));
+        assert_eq!(sut.get(1), Some(&20));
+        assert_eq!(sut.get(2), Some(&30));
+        assert_eq!(sut.get(3), Some(&40));
+        assert_eq!(sut.get(4), Some(&50));
+        assert_eq!(sut.get(5), Some(&60));
+
+        // Verify the combined list is still functional
+        sut.push_back(70);
+        assert_eq!(sut.len(), 7);
+        assert_eq!(sut.get(6), Some(&70));
+    }
+
+    #[test]
+    fn append_an_empty_list_do_nothing() {
+        // Create and populate the first list
+        let mut sut: ArrayList<i32, 2> = ArrayList::new();
+        sut.push_back(10);
+        sut.push_back(20);
+        sut.push_back(30);
+
+        // Create and populate the second list
+        let mut other: ArrayList<i32, 2> = ArrayList::new();
+
+        // Append the second list into the first
+        sut.append(&mut other);
+        assert!(other.is_empty());
+        assert_eq!(other.len(), 0);
+
+        other.push_back(100);
+        other.push_back(200);
+        assert_eq!(other.len(), 2);
+        assert_eq!(other.front(), Some(&100));
+        assert_eq!(other.back(), Some(&200));
+
+        // Verify the combined list
+        assert_eq!(sut.len(), 3);
+        assert_eq!(sut.get(0), Some(&10));
+        assert_eq!(sut.get(1), Some(&20));
+        assert_eq!(sut.get(2), Some(&30));
+
+        // Verify the combined list is still functional
+        sut.push_back(40);
+        assert_eq!(sut.len(), 4);
+        assert_eq!(sut.get(3), Some(&40));
+    }
+
+    #[test]
+    fn append_on_an_empty_list_adds_all_elements() {
+        // Create and populate the first list
+        let mut sut: ArrayList<i32, 2> = ArrayList::new();
+
+        // Create and populate the second list
+        let mut other: ArrayList<i32, 2> = ArrayList::new();
+        other.push_back(10);
+        other.push_back(20);
+        other.push_back(30);
+
+        // Append the second list into the first
+        sut.append(&mut other);
+        assert!(other.is_empty());
+        assert_eq!(other.len(), 0);
+
+        other.push_back(100);
+        other.push_back(200);
+        assert_eq!(other.len(), 2);
+        assert_eq!(other.front(), Some(&100));
+        assert_eq!(other.back(), Some(&200));
+
+        // Verify the combined list
+        assert_eq!(sut.len(), 3);
+        assert_eq!(sut.get(0), Some(&10));
+        assert_eq!(sut.get(1), Some(&20));
+        assert_eq!(sut.get(2), Some(&30));
+
+        // Verify the combined list is still functional
+        sut.push_back(40);
+        assert_eq!(sut.len(), 4);
+        assert_eq!(sut.get(3), Some(&40));
     }
 }
