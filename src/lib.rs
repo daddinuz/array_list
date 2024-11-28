@@ -604,6 +604,39 @@ where
         value
     }
 
+    /// Removes all elements from the `ArrayList`, effectively making it empty.
+    ///
+    /// This method deallocates all nodes in the list and resets the head, tail, and length
+    /// to their initial states. The method does not shrink the capacity of the list's nodes.
+    ///
+    /// # Complexity
+    /// - Time complexity: O(n), where n is the total number of elements in the list.
+    ///
+    /// # Example
+    /// ```rust
+    /// use array_list::ArrayList;
+    ///
+    /// let mut list: ArrayList<i32, 4> = ArrayList::new();
+    /// list.push_back(1);
+    /// list.push_back(2);
+    /// list.push_back(3);
+    ///
+    /// assert_eq!(list.len(), 3);
+    ///
+    /// list.clear();
+    ///
+    /// assert_eq!(list.len(), 0);
+    /// assert!(list.is_empty());
+    /// assert_eq!(list.front(), None);
+    /// assert_eq!(list.back(), None);
+    /// ```
+    pub fn clear(&mut self) {
+        // TODO: optimize dropping nodes instead of items one at time
+        while !self.is_empty() {
+            self.pop_back();
+        }
+    }
+
     /// Returns a reference to the first element of the `ArrayList`, if any.
     ///
     /// This method provides read-only access to the first element of the list without removing it.
@@ -1024,9 +1057,7 @@ where
     [T; N]: Array<T, N>,
 {
     fn drop(&mut self) {
-        while !self.is_empty() {
-            self.pop_back();
-        }
+        self.clear();
     }
 }
 
@@ -1645,6 +1676,32 @@ mod tests {
     }
 
     #[test]
+    fn clear_resets_the_list() {
+        let mut sut: ArrayList<i32, 2> = ArrayList::new();
+
+        sut.push_back(10);
+        sut.push_back(20);
+        sut.push_back(30);
+        assert!(!sut.is_empty());
+        assert_eq!(sut.len(), 3);
+
+        sut.clear();
+
+        assert!(sut.is_empty());
+        assert_eq!(sut.len(), 0);
+
+        assert_eq!(sut.front(), None);
+        assert_eq!(sut.back(), None);
+
+        // Verify the list is still functional after clearing
+        sut.push_back(40);
+        assert!(!sut.is_empty());
+        assert_eq!(sut.len(), 1);
+        assert_eq!(sut.front(), Some(&40));
+        assert_eq!(sut.back(), Some(&40));
+    }
+
+    #[test]
     fn front_returns_the_first_element() {
         let mut sut: ArrayList<i64, 2> = ArrayList::new();
         assert_eq!(sut.front(), None);
@@ -1813,5 +1870,68 @@ mod tests {
         sut.push_back(30);
         assert_eq!(sut.len(), 3);
         assert!(!sut.is_empty());
+    }
+
+    #[test]
+    fn list_remains_functional_after_multiple_operations() {
+        let mut sut: ArrayList<i32, 4> = ArrayList::new();
+
+        // Initial insertions
+        sut.push_back(10);
+        sut.push_back(20);
+        sut.push_back(30);
+        sut.push_back(40);
+        sut.push_back(50);
+
+        assert_eq!(sut.len(), 5);
+        assert_eq!(sut.front(), Some(&10));
+        assert_eq!(sut.back(), Some(&50));
+
+        // Remove elements from the front
+        assert_eq!(sut.pop_front(), Some(10));
+        assert_eq!(sut.pop_front(), Some(20));
+        assert_eq!(sut.len(), 3);
+        assert_eq!(sut.front(), Some(&30));
+        assert_eq!(sut.back(), Some(&50));
+
+        // Insert elements at the front
+        sut.push_front(5);
+        sut.push_front(0);
+        assert_eq!(sut.len(), 5);
+        assert_eq!(sut.front(), Some(&0));
+        assert_eq!(sut.back(), Some(&50));
+
+        // Remove elements from the back
+        assert_eq!(sut.pop_back(), Some(50));
+        assert_eq!(sut.pop_back(), Some(40));
+        assert_eq!(sut.len(), 3);
+        assert_eq!(sut.front(), Some(&0));
+        assert_eq!(sut.back(), Some(&30));
+
+        // Insert in the middle
+        sut.insert(1, 15);
+        assert_eq!(sut.len(), 4);
+        assert_eq!(sut.get(0), Some(&0));
+        assert_eq!(sut.get(1), Some(&15));
+        assert_eq!(sut.get(2), Some(&5));
+        assert_eq!(sut.get(3), Some(&30));
+
+        // Remove an element from the middle
+        assert_eq!(sut.remove(2), 5);
+        assert_eq!(sut.len(), 3);
+        assert_eq!(sut.get(0), Some(&0));
+        assert_eq!(sut.get(1), Some(&15));
+        assert_eq!(sut.get(2), Some(&30));
+
+        // Clear and verify reusability
+        sut.clear();
+        assert!(sut.is_empty());
+        assert_eq!(sut.len(), 0);
+
+        sut.push_back(100);
+        sut.push_back(200);
+        assert_eq!(sut.len(), 2);
+        assert_eq!(sut.front(), Some(&100));
+        assert_eq!(sut.back(), Some(&200));
     }
 }
