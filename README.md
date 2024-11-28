@@ -31,6 +31,21 @@ or iterations are required.
 - **Unsafe code:** The implementation relies on `unsafe` code for managing memory and pointers. However, it is extensively tested.
 - **More complex than `Vec` or `LinkedList`:** The additional logic for node splitting, merging, and XOR-linked traversal increases complexity compared to simpler collections.
 
+## Installation
+
+Add `array_list` to your `Cargo.toml`:
+
+```bash
+cargo add array_list
+```
+
+or edit your Cargo.toml manually by adding:
+
+```toml
+[dependencies]
+array_list = "0.1"
+```
+
 ## Example Usage
 
 ```rust
