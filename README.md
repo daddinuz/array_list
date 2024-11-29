@@ -11,13 +11,12 @@ or iterations are required.
 
 - **Dynamic:** Combines the benefits of a `Vec` (compact, cache-friendly storage) and a `LinkedList` (efficient insertions and deletions).
 - **Reduced pointer overhead:** Implements a **XOR linked list**, requiring only a single pointer per node for bidirectional traversal.
-- **Customizable chunk size:** The size of each chunk is determined at compile time via a const generic parameter up to 32 elements.
+- **Customizable chunk size:** The size of each chunk is determined at compile time via a const generic parameter up to 64 elements.
 - **Efficient memory operations:** Splits and merges nodes dynamically, redistributing elements when necessary.
 - **Rich API:** Provides functionality for:
-  - Insertions and deletions at arbitrary positions.
-  - Access to front and back elements.
-  - Iterators for traversal.
+  - Insertions, deletions and access at arbitrary positions.
   - Index-based access with `get` methods.
+  - Access to front and back elements.
 
 ## Strengths
 
@@ -43,7 +42,7 @@ or edit your Cargo.toml manually by adding:
 
 ```toml
 [dependencies]
-array_list = "0.1"
+array_list = "0.2"
 ```
 
 ## Example Usage

@@ -683,10 +683,25 @@ where
     /// assert_eq!(list.back(), None);
     /// ```
     pub fn clear(&mut self) {
-        // TODO: optimize dropping nodes instead of items one at time
-        while !self.is_empty() {
-            self.pop_back();
+        let mut right: Option<NonNull<Node<T, N>>> = None;
+        let mut cursor = self.tail;
+
+        while let Some(mut node) = cursor {
+            let tmp = cursor;
+
+            cursor = NonNull::new(
+                (unsafe { node.as_ref().link() } ^ right.map_or(0, |p| p.as_ptr() as usize))
+                    as *mut Node<T, N>,
+            );
+
+            right = tmp;
+
+            drop(unsafe { Box::from_raw(node.as_mut()) })
         }
+
+        self.tail = None;
+        self.head = None;
+        self.len = 0;
     }
 
     /// Returns a reference to the first element of the `ArrayList`, if any.

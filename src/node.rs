@@ -183,10 +183,12 @@ where
     [T; N]: Array<T, N>,
 {
     fn drop(&mut self) {
-        while !self.is_empty() {
-            self.len -= 1;
-            unsafe { self.data[self.len].assume_init_drop() };
+        for i in (0..self.len).rev() {
+            unsafe { self.data[i].assume_init_drop() };
         }
+
+        self.link = 0;
+        self.len = 0;
     }
 }
 
