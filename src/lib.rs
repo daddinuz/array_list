@@ -43,7 +43,7 @@ mod sailed;
 use node::Node;
 use sailed::Array;
 
-use std::ptr::NonNull;
+use core::ptr::NonNull;
 
 /// A dynamic container that combines the characteristics of a `Vec` and a `LinkedList`,
 /// implemented as an **unrolled linked list** with chunked storage.
