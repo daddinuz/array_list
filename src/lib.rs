@@ -92,7 +92,7 @@ use std::ptr::NonNull;
 /// The structure name `ArrayList` has no association with Java's `ArrayList`.
 pub struct ArrayList<T, const N: usize>
 where
-    [T; N]: Array<T, N>,
+    [T; N]: Array<T>,
 {
     head: Option<NonNull<Node<T, N>>>,
     tail: Option<NonNull<Node<T, N>>>,
@@ -101,7 +101,7 @@ where
 
 impl<T, const N: usize> Default for ArrayList<T, N>
 where
-    [T; N]: Array<T, N>,
+    [T; N]: Array<T>,
 {
     fn default() -> Self {
         Self::new()
@@ -110,7 +110,7 @@ where
 
 impl<T, const N: usize> ArrayList<T, N>
 where
-    [T; N]: Array<T, N>,
+    [T; N]: Array<T>,
 {
     /// Creates a new, empty `ArrayList`.
     ///
@@ -1121,7 +1121,7 @@ where
 
 impl<T, const N: usize> Drop for ArrayList<T, N>
 where
-    [T; N]: Array<T, N>,
+    [T; N]: Array<T>,
 {
     fn drop(&mut self) {
         self.clear();

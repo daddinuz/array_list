@@ -1,10 +1,10 @@
-use crate::sailed::Array;
-
 use std::mem::MaybeUninit;
+
+use crate::sailed::Array;
 
 pub struct Node<T, const N: usize>
 where
-    [T; N]: Array<T, N>,
+    [T; N]: Array<T>,
 {
     len: usize,
     link: usize,
@@ -13,13 +13,13 @@ where
 
 impl<T, const N: usize> Node<T, N>
 where
-    [T; N]: Array<T, N>,
+    [T; N]: Array<T>,
 {
     pub fn new() -> Self {
         Self {
             len: 0,
             link: 0,
-            data: <[T; N]>::uninit_array(),
+            data: [const { MaybeUninit::uninit() }; N],
         }
     }
 
@@ -27,7 +27,7 @@ where
         Self {
             len: 0,
             link,
-            data: <[T; N]>::uninit_array(),
+            data: [const { MaybeUninit::uninit() }; N],
         }
     }
 
@@ -180,7 +180,7 @@ where
 
 impl<T, const N: usize> Drop for Node<T, N>
 where
-    [T; N]: Array<T, N>,
+    [T; N]: Array<T>,
 {
     fn drop(&mut self) {
         for i in (0..self.len).rev() {
