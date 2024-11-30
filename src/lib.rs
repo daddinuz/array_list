@@ -108,6 +108,17 @@ where
     }
 }
 
+impl<T, const N: usize> FromIterator<T> for ArrayList<T, N>
+where
+    [T; N]: Array<T>,
+{
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut this = Self::new();
+        this.extend(iter);
+        this
+    }
+}
+
 impl<T, const N: usize> Extend<T> for ArrayList<T, N>
 where
     [T; N]: Array<T>,
@@ -2117,6 +2128,21 @@ mod tests {
         sut.push_back(40);
         assert_eq!(sut.len(), 4);
         assert_eq!(sut.get(3), Some(&40));
+    }
+
+    #[test]
+    fn from_iter_works_correctly() {
+        let sut: ArrayList<i32, 2> = ArrayList::from_iter(0..5);
+        assert!(!sut.is_empty());
+        assert_eq!(sut.len(), 5);
+        assert_eq!(sut.get(0), Some(&0));
+        assert_eq!(sut.get(1), Some(&1));
+        assert_eq!(sut.get(2), Some(&2));
+        assert_eq!(sut.get(3), Some(&3));
+        assert_eq!(sut.get(4), Some(&4));
+
+        assert_eq!(sut.front(), Some(&0));
+        assert_eq!(sut.back(), Some(&4));
     }
 
     #[test]
