@@ -1,4 +1,5 @@
 use core::mem::MaybeUninit;
+use core::panic;
 
 use crate::sailed::Array;
 
@@ -15,18 +16,11 @@ impl<T, const N: usize> Node<T, N>
 where
     [T; N]: Array<T>,
 {
-    pub fn new() -> Self {
+    #[inline]
+    pub const fn new() -> Self {
         Self {
             len: 0,
             link: 0,
-            data: [const { MaybeUninit::uninit() }; N],
-        }
-    }
-
-    pub fn new_with_link(link: usize) -> Self {
-        Self {
-            len: 0,
-            link,
             data: [const { MaybeUninit::uninit() }; N],
         }
     }
@@ -192,9 +186,48 @@ where
     }
 }
 
+pub struct NodeBuilder<T, const N: usize>
+where
+    [T; N]: Array<T>,
+{
+    node: Node<T, N>,
+}
+
+impl<T, const N: usize> NodeBuilder<T, N>
+where
+    [T; N]: Array<T>,
+{
+    #[inline]
+    pub const fn new() -> Self {
+        Self { node: Node::new() }
+    }
+
+    #[inline]
+    pub const fn set_link(mut self, link: usize) -> Self {
+        self.node.link = link;
+        self
+    }
+
+    #[inline]
+    pub fn push_back(mut self, value: T) -> Self {
+        if self.node.is_full() {
+            panic!("Node is full: cannot insert more elements");
+        }
+
+        self.node.data[self.node.len].write(value);
+        self.node.len += 1;
+        self
+    }
+
+    #[inline]
+    pub fn build(self) -> Node<T, N> {
+        self.node
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::node::Node;
+    use super::{Node, NodeBuilder};
 
     #[test]
     fn node_insert_puts_elements_in_the_correct_positions() {
@@ -336,5 +369,61 @@ mod tests {
         assert_eq!(sut.len(), 0);
         assert!(sut.is_empty());
         assert_eq!(sut.get_mut(0), None);
+    }
+
+    #[test]
+    fn node_builder_returns_correct_node() {
+        {
+            let sut = NodeBuilder::<i32, 4>::new();
+            let node = sut.build();
+            assert_eq!(node.len(), 0);
+            assert_eq!(node.get(0), None);
+            assert_eq!(node.link(), 0);
+        }
+
+        {
+            let sut = NodeBuilder::<i32, 4>::new().set_link(42);
+            let node = sut.build();
+            assert_eq!(node.len(), 0);
+            assert_eq!(node.get(0), None);
+            assert_eq!(node.link(), 42);
+        }
+
+        {
+            let sut = NodeBuilder::<i32, 4>::new().push_back(42);
+            let node = sut.build();
+            assert_eq!(node.len(), 1);
+            assert_eq!(node.get(0), Some(&42));
+            assert_eq!(node.link(), 0);
+        }
+
+        {
+            let sut = NodeBuilder::<i32, 4>::new().push_back(42).set_link(7);
+            let node = sut.build();
+            assert_eq!(node.len(), 1);
+            assert_eq!(node.get(0), Some(&42));
+            assert_eq!(node.link(), 7);
+        }
+
+        {
+            let sut = NodeBuilder::<i32, 2>::new()
+                .push_back(42)
+                .push_back(12)
+                .set_link(7);
+            let node = sut.build();
+            assert_eq!(node.len(), 2);
+            assert_eq!(node.get(0), Some(&42));
+            assert_eq!(node.get(1), Some(&12));
+            assert_eq!(node.link(), 7);
+        }
+
+        let r = std::panic::catch_unwind(|| {
+            let _ = NodeBuilder::<i32, 2>::new()
+                .push_back(42)
+                .push_back(12)
+                .push_back(0xdead)
+                .build();
+        });
+        assert!(r.is_err());
     }
 }

@@ -40,7 +40,7 @@
 mod node;
 mod sailed;
 
-use node::Node;
+use node::{Node, NodeBuilder};
 use sailed::Array;
 
 use core::ptr::NonNull;
@@ -185,8 +185,12 @@ where
             let head = unsafe { head_ptr.as_mut() };
 
             if head.is_full() {
-                let mut new_node = Box::new(Node::new_with_link(head_ptr.as_ptr() as usize));
-                new_node.push_front(value);
+                let new_node = Box::new(
+                    NodeBuilder::new()
+                        .set_link(head_ptr.as_ptr() as usize)
+                        .push_back(value)
+                        .build(),
+                );
 
                 // Get the pointer to the new node
                 let new_node_ptr: NonNull<Node<T, N>> = Box::leak(new_node).into();
@@ -210,8 +214,7 @@ where
             }
         } else {
             // The list is empty; create the first node
-            let mut new_node = Box::new(Node::new());
-            new_node.push_front(value);
+            let new_node = Box::new(NodeBuilder::new().push_back(value).build());
             // Make both head and tail point to the new node
             let new_node_ptr = Box::leak(new_node).into();
             self.head = Some(new_node_ptr);
@@ -249,8 +252,12 @@ where
             let tail = unsafe { tail_ptr.as_mut() };
 
             if tail.is_full() {
-                let mut new_node = Box::new(Node::new_with_link(tail_ptr.as_ptr() as usize));
-                new_node.push_back(value);
+                let new_node = Box::new(
+                    NodeBuilder::new()
+                        .set_link(tail_ptr.as_ptr() as usize)
+                        .push_back(value)
+                        .build(),
+                );
 
                 // Get the pointer to the new node
                 let new_node_ptr: NonNull<Node<T, N>> = Box::leak(new_node).into();
@@ -274,8 +281,7 @@ where
             }
         } else {
             // The list is empty; create the first node
-            let mut new_node = Box::new(Node::new());
-            new_node.push_back(value);
+            let new_node = Box::new(NodeBuilder::new().push_back(value).build());
             // Make both head and tail point to the new node
             let new_node_ptr = Box::leak(new_node).into();
             self.head = Some(new_node_ptr);
