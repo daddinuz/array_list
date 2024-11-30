@@ -99,6 +99,15 @@ where
     len: usize,
 }
 
+impl<T, const N: usize, const M: usize> From<[T; M]> for ArrayList<T, N>
+where
+    [T; N]: Array<T>,
+{
+    fn from(values: [T; M]) -> Self {
+        values.into_iter().collect()
+    }
+}
+
 impl<T, const N: usize> Default for ArrayList<T, N>
 where
     [T; N]: Array<T>,
@@ -2181,6 +2190,21 @@ mod tests {
     fn extend_with_refs_works_correctly() {
         let mut sut: ArrayList<i32, 2> = ArrayList::new();
         sut.extend([0, 1, 2, 3, 4].iter());
+        assert!(!sut.is_empty());
+        assert_eq!(sut.len(), 5);
+        assert_eq!(sut.get(0), Some(&0));
+        assert_eq!(sut.get(1), Some(&1));
+        assert_eq!(sut.get(2), Some(&2));
+        assert_eq!(sut.get(3), Some(&3));
+        assert_eq!(sut.get(4), Some(&4));
+
+        assert_eq!(sut.front(), Some(&0));
+        assert_eq!(sut.back(), Some(&4));
+    }
+
+    #[test]
+    fn from_array_works_correctly() {
+        let sut: ArrayList<i32, 2> = ArrayList::from([0, 1, 2, 3, 4]);
         assert!(!sut.is_empty());
         assert_eq!(sut.len(), 5);
         assert_eq!(sut.get(0), Some(&0));
