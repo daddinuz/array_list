@@ -43,6 +43,7 @@ mod sailed;
 use node::{Node, NodeBuilder};
 use sailed::{Array, ConstCast, NonZero, Usize};
 
+use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 /// A dynamic container that combines the characteristics of a `Vec` and a `LinkedList`,
@@ -98,6 +99,7 @@ where
     head: Option<NonNull<Node<T, N>>>,
     tail: Option<NonNull<Node<T, N>>>,
     len: usize,
+    marker: PhantomData<Box<Node<T, N>>>,
 }
 
 impl<T, const N: usize, const M: usize> From<[T; M]> for ArrayList<T, N>
@@ -181,6 +183,7 @@ where
             head: None,
             tail: None,
             len: 0,
+            marker: PhantomData,
         }
     }
 
