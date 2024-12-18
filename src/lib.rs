@@ -48,6 +48,8 @@ use sailed::{Array, ConstCast, NonZero, Usize};
 
 use core::marker::PhantomData;
 use core::ptr::NonNull;
+use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 
 /// A dynamic container that combines the characteristics of a `Vec` and a `LinkedList`,
 /// implemented as an **unrolled linked list** with chunked storage.
@@ -89,7 +91,7 @@ use core::ptr::NonNull;
 /// # Applications
 /// `ArrayList` is suitable for use cases where:
 /// - Frequent insertions or deletions occur in the middle of the list.
-/// - Memory efficiency and improved cache performance are priorities.
+/// - Memory efficiency and improved cache performance over plain LinkedList are priorities.
 /// - A hybrid structure that balances the strengths of `Vec` and `LinkedList` is needed.
 ///
 /// # Note
@@ -1200,6 +1202,82 @@ where
     }
 }
 
+impl<T, const N: usize> Clone for ArrayList<T, N>
+where
+    T: Clone,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn clone(&self) -> Self {
+        self.iter().cloned().collect()
+    }
+}
+
+impl<T, const N: usize> PartialEq for ArrayList<T, N>
+where
+    T: PartialEq,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len() && self.iter().eq(other)
+    }
+}
+
+impl<T, const N: usize> Eq for ArrayList<T, N>
+where
+    T: Eq,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+}
+
+impl<T, const N: usize> PartialOrd for ArrayList<T, N>
+where
+    T: PartialOrd,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.iter().partial_cmp(other)
+    }
+}
+
+impl<T, const N: usize> Ord for ArrayList<T, N>
+where
+    T: Ord,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.iter().cmp(other)
+    }
+}
+
+impl<T, const N: usize> Hash for ArrayList<T, N>
+where
+    T: Hash,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.len());
+        self.iter().for_each(|e| e.hash(state));
+    }
+}
+
+impl<T, const N: usize> std::fmt::Debug for ArrayList<T, N>
+where
+    T: std::fmt::Debug,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self).finish()
+    }
+}
+
 impl<'a, T, const N: usize> IntoIterator for &'a ArrayList<T, N>
 where
     [T; N]: Array,
@@ -1241,7 +1319,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::mem::size_of;
+    use std::{
+        cmp::Ordering,
+        hash::{BuildHasher, BuildHasherDefault, DefaultHasher},
+        mem::size_of,
+    };
 
     use crate::ArrayList;
 
@@ -2281,5 +2363,80 @@ mod tests {
 
         assert_eq!(sut.front(), Some(&0));
         assert_eq!(sut.back(), Some(&4));
+    }
+
+    #[test]
+    fn clone_works_correctly() {
+        let mut other: ArrayList<i32, 2> = ArrayList::from([0, 1, 2, 3, 4]);
+
+        let sut = other.clone();
+        assert!(!sut.is_empty());
+        assert_eq!(sut.len(), 5);
+        assert_eq!(sut.front(), Some(&0));
+        assert_eq!(sut.back(), Some(&4));
+        assert_eq!(sut.get(0), Some(&0));
+        assert_eq!(sut.get(1), Some(&1));
+        assert_eq!(sut.get(2), Some(&2));
+        assert_eq!(sut.get(3), Some(&3));
+        assert_eq!(sut.get(4), Some(&4));
+
+        other.clear();
+        let sut = other.clone();
+        assert!(sut.is_empty());
+        assert_eq!(sut.len(), 0);
+        assert_eq!(sut.front(), None);
+        assert_eq!(sut.back(), None);
+        assert_eq!(sut.get(0), None);
+    }
+
+    #[test]
+    fn eq_works_correctly() {
+        let l = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
+        let mut r = ArrayList::<usize, 2>::from([0, 2, 3, 4, 1]);
+
+        assert_eq!(l, l);
+        assert_eq!(r, r);
+        assert_ne!(l, r);
+
+        r.pop_back();
+        assert_ne!(l, r);
+
+        r.insert(1, 1);
+        assert_eq!(l, r);
+    }
+
+    #[test]
+    fn debug_works_correctly() {
+        let array = [0, 1, 2, 3, 4];
+        let list = ArrayList::<usize, 2>::from(array);
+        assert_eq!(format!("{list:?}"), format!("{:?}", array));
+    }
+
+    #[test]
+    fn cmp_works_correctly() {
+        let a = ArrayList::<usize, 2>::from([0, 1, 2]);
+        let b = ArrayList::<usize, 2>::from([4, 5, 6]);
+        assert_eq!(a.cmp(&a), Ordering::Equal);
+        assert_eq!(a.cmp(&b), Ordering::Less);
+        assert_eq!(b.cmp(&a), Ordering::Greater);
+    }
+
+    #[test]
+    fn partial_cmp_works_correctly() {
+        let a = ArrayList::<f64, 2>::from([0.0, 1.0, 2.0]);
+        let b = ArrayList::<f64, 2>::from([4.0, 5.0, 6.0]);
+        assert_eq!(a.partial_cmp(&a), Some(Ordering::Equal));
+        assert_eq!(a.partial_cmp(&b), Some(Ordering::Less));
+        assert_eq!(b.partial_cmp(&a), Some(Ordering::Greater));
+    }
+
+    #[test]
+    fn hash_works_correctly() {
+        let bh = BuildHasherDefault::<DefaultHasher>::default();
+        let a = ArrayList::<usize, 2>::from([0, 1, 2]);
+        let b = ArrayList::<usize, 2>::from([4, 5, 6]);
+        assert_ne!(bh.hash_one(&a), bh.hash_one(&b));
+        assert_eq!(bh.hash_one(&a), bh.hash_one(&a));
+        assert_eq!(bh.hash_one(&a), bh.hash_one(&(a.clone())));
     }
 }
