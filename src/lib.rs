@@ -41,7 +41,7 @@ mod node;
 mod sailed;
 
 use node::{Node, NodeBuilder};
-use sailed::Array;
+use sailed::{Array, ConstCast, NonZero, Usize};
 
 use core::ptr::NonNull;
 
@@ -92,7 +92,8 @@ use core::ptr::NonNull;
 /// The structure name `ArrayList` has no association with Java's `ArrayList`.
 pub struct ArrayList<T, const N: usize>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     head: Option<NonNull<Node<T, N>>>,
     tail: Option<NonNull<Node<T, N>>>,
@@ -101,7 +102,8 @@ where
 
 impl<T, const N: usize, const M: usize> From<[T; M]> for ArrayList<T, N>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     fn from(values: [T; M]) -> Self {
         values.into_iter().collect()
@@ -110,7 +112,8 @@ where
 
 impl<T, const N: usize> Default for ArrayList<T, N>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     fn default() -> Self {
         Self::new()
@@ -119,7 +122,8 @@ where
 
 impl<T, const N: usize> FromIterator<T> for ArrayList<T, N>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let mut this = Self::new();
@@ -130,7 +134,8 @@ where
 
 impl<T, const N: usize> Extend<T> for ArrayList<T, N>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         iter.into_iter().for_each(|v| self.push_back(v));
@@ -140,7 +145,8 @@ where
 impl<'a, T, const N: usize> Extend<&'a T> for ArrayList<T, N>
 where
     T: Clone,
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
         self.extend(iter.into_iter().cloned());
@@ -149,7 +155,8 @@ where
 
 impl<T, const N: usize> ArrayList<T, N>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     /// Creates a new, empty `ArrayList`.
     ///
@@ -1166,7 +1173,8 @@ where
 
 impl<T, const N: usize> Drop for ArrayList<T, N>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     fn drop(&mut self) {
         self.clear();

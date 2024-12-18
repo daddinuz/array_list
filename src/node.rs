@@ -1,11 +1,12 @@
 use core::mem::MaybeUninit;
 use core::panic;
 
-use crate::sailed::Array;
+use crate::sailed::{Array, ConstCast, NonZero, Usize};
 
 pub struct Node<T, const N: usize>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     len: usize,
     link: usize,
@@ -14,7 +15,8 @@ where
 
 impl<T, const N: usize> Node<T, N>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     #[inline]
     pub const fn new() -> Self {
@@ -174,7 +176,8 @@ where
 
 impl<T, const N: usize> Drop for Node<T, N>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     fn drop(&mut self) {
         for i in (0..self.len).rev() {
@@ -188,14 +191,16 @@ where
 
 pub struct NodeBuilder<T, const N: usize>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     node: Node<T, N>,
 }
 
 impl<T, const N: usize> NodeBuilder<T, N>
 where
-    [T; N]: Array<T>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     #[inline]
     pub const fn new() -> Self {
