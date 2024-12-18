@@ -46,10 +46,10 @@ pub use iter::Iter;
 use node::{Node, NodeBuilder};
 use sailed::{Array, ConstCast, NonZero, Usize};
 
+use core::cmp::Ordering;
+use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
-use std::cmp::Ordering;
-use std::hash::{Hash, Hasher};
 
 /// A dynamic container that combines the characteristics of a `Vec` and a `LinkedList`,
 /// implemented as an **unrolled linked list** with chunked storage.
@@ -1319,11 +1319,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        cmp::Ordering,
-        hash::{BuildHasher, BuildHasherDefault, DefaultHasher},
-        mem::size_of,
-    };
+    use std::cmp::Ordering;
+    use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+    use std::mem::size_of;
 
     use crate::ArrayList;
 
