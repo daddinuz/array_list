@@ -37,8 +37,11 @@
 //! assert_eq!(list.pop_front(), Some(0));
 //! ```
 
+mod iter;
 mod node;
 mod sailed;
+
+pub use iter::Iter;
 
 use node::{Node, NodeBuilder};
 use sailed::{Array, ConstCast, NonZero, Usize};
@@ -1001,6 +1004,29 @@ where
         self.len() == 0
     }
 
+    /// Provides an iterator over list's elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use array_list::ArrayList;
+    ///
+    /// let mut list: ArrayList<_, 2> = ArrayList::new();
+    /// list.push_back(0);
+    /// list.push_back(1);
+    /// list.push_back(2);
+    ///
+    /// let mut iter = list.iter();
+    /// assert_eq!(iter.next(), Some(&0));
+    /// assert_eq!(iter.next(), Some(&1));
+    /// assert_eq!(iter.next(), Some(&2));
+    /// assert_eq!(iter.next(), None);
+    /// ```
+    #[inline]
+    pub fn iter(&self) -> Iter<'_, T, N> {
+        Iter::from_list(self)
+    }
+
     #[inline]
     fn get_closest(
         &self,
@@ -1171,6 +1197,19 @@ where
             right = Some(cursor);
             cursor = left?;
         }
+    }
+}
+
+impl<'a, T, const N: usize> IntoIterator for &'a ArrayList<T, N>
+where
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    type Item = &'a T;
+    type IntoIter = Iter<'a, T, N>;
+
+    fn into_iter(self) -> Iter<'a, T, N> {
+        self.iter()
     }
 }
 
