@@ -37,10 +37,12 @@
 //! assert_eq!(list.pop_front(), Some(0));
 //! ```
 
+mod cursor;
 mod iter;
 mod node;
 mod sailed;
 
+pub use cursor::Cursor;
 pub use iter::Iter;
 
 use node::{Node, NodeBuilder};
@@ -1027,6 +1029,22 @@ where
     #[inline]
     pub fn iter(&self) -> Iter<'_, T, N> {
         Iter::from_list(self)
+    }
+
+    /// Provides a cursor at the front element.
+    ///
+    /// The cursor is pointing to the “ghost” non-element if the list is empty.
+    #[inline]
+    pub fn cursor_front(&self) -> Cursor<'_, T, N> {
+        Cursor::from_front(self)
+    }
+
+    /// Provides a cursor at the back element.
+    ///
+    /// The cursor is pointing to the “ghost” non-element if the list is empty.
+    #[inline]
+    pub fn cursor_back(&self) -> Cursor<'_, T, N> {
+        Cursor::from_back(self)
     }
 
     #[inline]
@@ -2209,16 +2227,10 @@ mod tests {
 
         // Append the second list into the first
         sut.append(&mut other);
+
         assert!(other.is_empty());
         assert_eq!(other.len(), 0);
 
-        other.push_back(100);
-        other.push_back(200);
-        assert_eq!(other.len(), 2);
-        assert_eq!(other.front(), Some(&100));
-        assert_eq!(other.back(), Some(&200));
-
-        // Verify the combined list
         assert_eq!(sut.len(), 6);
         assert_eq!(sut.get(0), Some(&10));
         assert_eq!(sut.get(1), Some(&20));
@@ -2227,9 +2239,32 @@ mod tests {
         assert_eq!(sut.get(4), Some(&50));
         assert_eq!(sut.get(5), Some(&60));
 
-        // Verify the combined list is still functional
+        // ensure appending an empty list does nothing
+        sut.append(&mut other);
+        assert_eq!(sut.len(), 6);
+        assert_eq!(sut.get(0), Some(&10));
+        assert_eq!(sut.get(1), Some(&20));
+        assert_eq!(sut.get(2), Some(&30));
+        assert_eq!(sut.get(3), Some(&40));
+        assert_eq!(sut.get(4), Some(&50));
+        assert_eq!(sut.get(5), Some(&60));
+
+        // ensure other remains functional
+        other.push_back(100);
+        other.push_back(200);
+        assert_eq!(other.len(), 2);
+        assert_eq!(other.front(), Some(&100));
+        assert_eq!(other.back(), Some(&200));
+
+        // ensure sut remains functional
         sut.push_back(70);
         assert_eq!(sut.len(), 7);
+        assert_eq!(sut.get(0), Some(&10));
+        assert_eq!(sut.get(1), Some(&20));
+        assert_eq!(sut.get(2), Some(&30));
+        assert_eq!(sut.get(3), Some(&40));
+        assert_eq!(sut.get(4), Some(&50));
+        assert_eq!(sut.get(5), Some(&60));
         assert_eq!(sut.get(6), Some(&70));
     }
 
