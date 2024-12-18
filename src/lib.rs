@@ -1184,6 +1184,22 @@ where
     }
 }
 
+unsafe impl<T, const N: usize> Send for ArrayList<T, N>
+where
+    T: Send,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+}
+
+unsafe impl<T, const N: usize> Sync for ArrayList<T, N>
+where
+    T: Sync,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+}
+
 #[cfg(test)]
 mod tests {
     use std::mem::size_of;
