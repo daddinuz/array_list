@@ -42,7 +42,7 @@ or edit your Cargo.toml manually by adding:
 
 ```toml
 [dependencies]
-array_list = "0.2"
+array_list = "0.3"
 ```
 
 ## Example Usage

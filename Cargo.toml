@@ -2,7 +2,7 @@
 authors = ["Davide Di Carlo <daddinuz@gmail.com>"]
 description = "A dynamic container that combines the characteristics of a Vec and a LinkedList"
 name = "array_list"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 keywords = ["collections", "vec", "xor", "linked-list", "unrolled"]
