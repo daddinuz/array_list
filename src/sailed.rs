@@ -1,72 +1,440 @@
-use std::mem::MaybeUninit;
+pub struct Usize<const N: usize>;
 
-pub trait Array<T, const N: usize> {
-    fn uninit_array() -> [MaybeUninit<T>; N] {
-        unsafe { MaybeUninit::uninit().assume_init() }
-    }
+impl<const N: usize> Usize<N> {
+    pub const VALUE: usize = N;
 }
 
-impl<T> Array<T, 1> for [T; 1] {}
-impl<T> Array<T, 2> for [T; 2] {}
-impl<T> Array<T, 3> for [T; 3] {}
-impl<T> Array<T, 4> for [T; 4] {}
-impl<T> Array<T, 5> for [T; 5] {}
-impl<T> Array<T, 6> for [T; 6] {}
-impl<T> Array<T, 7> for [T; 7] {}
-impl<T> Array<T, 8> for [T; 8] {}
-impl<T> Array<T, 9> for [T; 9] {}
-impl<T> Array<T, 10> for [T; 10] {}
-impl<T> Array<T, 11> for [T; 11] {}
-impl<T> Array<T, 12> for [T; 12] {}
-impl<T> Array<T, 13> for [T; 13] {}
-impl<T> Array<T, 14> for [T; 14] {}
-impl<T> Array<T, 15> for [T; 15] {}
-impl<T> Array<T, 16> for [T; 16] {}
-impl<T> Array<T, 17> for [T; 17] {}
-impl<T> Array<T, 18> for [T; 18] {}
-impl<T> Array<T, 19> for [T; 19] {}
-impl<T> Array<T, 20> for [T; 20] {}
-impl<T> Array<T, 21> for [T; 21] {}
-impl<T> Array<T, 22> for [T; 22] {}
-impl<T> Array<T, 23> for [T; 23] {}
-impl<T> Array<T, 24> for [T; 24] {}
-impl<T> Array<T, 25> for [T; 25] {}
-impl<T> Array<T, 26> for [T; 26] {}
-impl<T> Array<T, 27> for [T; 27] {}
-impl<T> Array<T, 28> for [T; 28] {}
-impl<T> Array<T, 29> for [T; 29] {}
-impl<T> Array<T, 30> for [T; 30] {}
-impl<T> Array<T, 31> for [T; 31] {}
-impl<T> Array<T, 32> for [T; 32] {}
-impl<T> Array<T, 33> for [T; 33] {}
-impl<T> Array<T, 34> for [T; 34] {}
-impl<T> Array<T, 35> for [T; 35] {}
-impl<T> Array<T, 36> for [T; 36] {}
-impl<T> Array<T, 37> for [T; 37] {}
-impl<T> Array<T, 38> for [T; 38] {}
-impl<T> Array<T, 39> for [T; 39] {}
-impl<T> Array<T, 40> for [T; 40] {}
-impl<T> Array<T, 41> for [T; 41] {}
-impl<T> Array<T, 42> for [T; 42] {}
-impl<T> Array<T, 43> for [T; 43] {}
-impl<T> Array<T, 44> for [T; 44] {}
-impl<T> Array<T, 45> for [T; 45] {}
-impl<T> Array<T, 46> for [T; 46] {}
-impl<T> Array<T, 47> for [T; 47] {}
-impl<T> Array<T, 48> for [T; 48] {}
-impl<T> Array<T, 49> for [T; 49] {}
-impl<T> Array<T, 50> for [T; 50] {}
-impl<T> Array<T, 51> for [T; 51] {}
-impl<T> Array<T, 52> for [T; 52] {}
-impl<T> Array<T, 53> for [T; 53] {}
-impl<T> Array<T, 54> for [T; 54] {}
-impl<T> Array<T, 55> for [T; 55] {}
-impl<T> Array<T, 56> for [T; 56] {}
-impl<T> Array<T, 57> for [T; 57] {}
-impl<T> Array<T, 58> for [T; 58] {}
-impl<T> Array<T, 59> for [T; 59] {}
-impl<T> Array<T, 60> for [T; 60] {}
-impl<T> Array<T, 61> for [T; 61] {}
-impl<T> Array<T, 62> for [T; 62] {}
-impl<T> Array<T, 63> for [T; 63] {}
-impl<T> Array<T, 64> for [T; 64] {}
+pub trait NonZero {}
+
+macro_rules! impl_non_zero {
+    ($N:expr) => {
+        impl NonZero for Usize<$N> {}
+    };
+}
+
+impl_non_zero!(1);
+impl_non_zero!(2);
+impl_non_zero!(3);
+impl_non_zero!(4);
+impl_non_zero!(5);
+impl_non_zero!(6);
+impl_non_zero!(7);
+impl_non_zero!(8);
+impl_non_zero!(9);
+impl_non_zero!(10);
+impl_non_zero!(11);
+impl_non_zero!(12);
+impl_non_zero!(13);
+impl_non_zero!(14);
+impl_non_zero!(15);
+impl_non_zero!(16);
+impl_non_zero!(17);
+impl_non_zero!(18);
+impl_non_zero!(19);
+impl_non_zero!(20);
+impl_non_zero!(21);
+impl_non_zero!(22);
+impl_non_zero!(23);
+impl_non_zero!(24);
+impl_non_zero!(25);
+impl_non_zero!(26);
+impl_non_zero!(27);
+impl_non_zero!(28);
+impl_non_zero!(29);
+impl_non_zero!(30);
+impl_non_zero!(31);
+impl_non_zero!(32);
+impl_non_zero!(33);
+impl_non_zero!(34);
+impl_non_zero!(35);
+impl_non_zero!(36);
+impl_non_zero!(37);
+impl_non_zero!(38);
+impl_non_zero!(39);
+impl_non_zero!(40);
+impl_non_zero!(41);
+impl_non_zero!(42);
+impl_non_zero!(43);
+impl_non_zero!(44);
+impl_non_zero!(45);
+impl_non_zero!(46);
+impl_non_zero!(47);
+impl_non_zero!(48);
+impl_non_zero!(49);
+impl_non_zero!(50);
+impl_non_zero!(51);
+impl_non_zero!(52);
+impl_non_zero!(53);
+impl_non_zero!(54);
+impl_non_zero!(55);
+impl_non_zero!(56);
+impl_non_zero!(57);
+impl_non_zero!(58);
+impl_non_zero!(59);
+impl_non_zero!(60);
+impl_non_zero!(61);
+impl_non_zero!(62);
+impl_non_zero!(63);
+impl_non_zero!(64);
+impl_non_zero!(65);
+impl_non_zero!(66);
+impl_non_zero!(67);
+impl_non_zero!(68);
+impl_non_zero!(69);
+impl_non_zero!(70);
+impl_non_zero!(71);
+impl_non_zero!(72);
+impl_non_zero!(73);
+impl_non_zero!(74);
+impl_non_zero!(75);
+impl_non_zero!(76);
+impl_non_zero!(77);
+impl_non_zero!(78);
+impl_non_zero!(79);
+impl_non_zero!(80);
+impl_non_zero!(81);
+impl_non_zero!(82);
+impl_non_zero!(83);
+impl_non_zero!(84);
+impl_non_zero!(85);
+impl_non_zero!(86);
+impl_non_zero!(87);
+impl_non_zero!(88);
+impl_non_zero!(89);
+impl_non_zero!(90);
+impl_non_zero!(91);
+impl_non_zero!(92);
+impl_non_zero!(93);
+impl_non_zero!(94);
+impl_non_zero!(95);
+impl_non_zero!(96);
+impl_non_zero!(97);
+impl_non_zero!(98);
+impl_non_zero!(99);
+impl_non_zero!(100);
+impl_non_zero!(101);
+impl_non_zero!(102);
+impl_non_zero!(103);
+impl_non_zero!(104);
+impl_non_zero!(105);
+impl_non_zero!(106);
+impl_non_zero!(107);
+impl_non_zero!(108);
+impl_non_zero!(109);
+impl_non_zero!(110);
+impl_non_zero!(111);
+impl_non_zero!(112);
+impl_non_zero!(113);
+impl_non_zero!(114);
+impl_non_zero!(115);
+impl_non_zero!(116);
+impl_non_zero!(117);
+impl_non_zero!(118);
+impl_non_zero!(119);
+impl_non_zero!(120);
+impl_non_zero!(121);
+impl_non_zero!(122);
+impl_non_zero!(123);
+impl_non_zero!(124);
+impl_non_zero!(125);
+impl_non_zero!(126);
+impl_non_zero!(127);
+impl_non_zero!(128);
+
+pub trait ConstCast<T> {
+    const CAST: T;
+}
+
+#[allow(dead_code)]
+const fn is_const_cast<U, T: ConstCast<U>>() {}
+
+macro_rules! impl_const_cast {
+    ($N:expr) => {
+        impl ConstCast<u16> for Usize<$N> {
+            const CAST: u16 = $N;
+        }
+
+        // this is needed to ensure that we keep
+        // implementation of traits in sync
+        const _: () = is_array::<[(); $N]>();
+    };
+}
+
+impl_const_cast!(0);
+impl_const_cast!(1);
+impl_const_cast!(2);
+impl_const_cast!(3);
+impl_const_cast!(4);
+impl_const_cast!(5);
+impl_const_cast!(6);
+impl_const_cast!(7);
+impl_const_cast!(8);
+impl_const_cast!(9);
+impl_const_cast!(10);
+impl_const_cast!(11);
+impl_const_cast!(12);
+impl_const_cast!(13);
+impl_const_cast!(14);
+impl_const_cast!(15);
+impl_const_cast!(16);
+impl_const_cast!(17);
+impl_const_cast!(18);
+impl_const_cast!(19);
+impl_const_cast!(20);
+impl_const_cast!(21);
+impl_const_cast!(22);
+impl_const_cast!(23);
+impl_const_cast!(24);
+impl_const_cast!(25);
+impl_const_cast!(26);
+impl_const_cast!(27);
+impl_const_cast!(28);
+impl_const_cast!(29);
+impl_const_cast!(30);
+impl_const_cast!(31);
+impl_const_cast!(32);
+impl_const_cast!(33);
+impl_const_cast!(34);
+impl_const_cast!(35);
+impl_const_cast!(36);
+impl_const_cast!(37);
+impl_const_cast!(38);
+impl_const_cast!(39);
+impl_const_cast!(40);
+impl_const_cast!(41);
+impl_const_cast!(42);
+impl_const_cast!(43);
+impl_const_cast!(44);
+impl_const_cast!(45);
+impl_const_cast!(46);
+impl_const_cast!(47);
+impl_const_cast!(48);
+impl_const_cast!(49);
+impl_const_cast!(50);
+impl_const_cast!(51);
+impl_const_cast!(52);
+impl_const_cast!(53);
+impl_const_cast!(54);
+impl_const_cast!(55);
+impl_const_cast!(56);
+impl_const_cast!(57);
+impl_const_cast!(58);
+impl_const_cast!(59);
+impl_const_cast!(60);
+impl_const_cast!(61);
+impl_const_cast!(62);
+impl_const_cast!(63);
+impl_const_cast!(64);
+impl_const_cast!(65);
+impl_const_cast!(66);
+impl_const_cast!(67);
+impl_const_cast!(68);
+impl_const_cast!(69);
+impl_const_cast!(70);
+impl_const_cast!(71);
+impl_const_cast!(72);
+impl_const_cast!(73);
+impl_const_cast!(74);
+impl_const_cast!(75);
+impl_const_cast!(76);
+impl_const_cast!(77);
+impl_const_cast!(78);
+impl_const_cast!(79);
+impl_const_cast!(80);
+impl_const_cast!(81);
+impl_const_cast!(82);
+impl_const_cast!(83);
+impl_const_cast!(84);
+impl_const_cast!(85);
+impl_const_cast!(86);
+impl_const_cast!(87);
+impl_const_cast!(88);
+impl_const_cast!(89);
+impl_const_cast!(90);
+impl_const_cast!(91);
+impl_const_cast!(92);
+impl_const_cast!(93);
+impl_const_cast!(94);
+impl_const_cast!(95);
+impl_const_cast!(96);
+impl_const_cast!(97);
+impl_const_cast!(98);
+impl_const_cast!(99);
+impl_const_cast!(100);
+impl_const_cast!(101);
+impl_const_cast!(102);
+impl_const_cast!(103);
+impl_const_cast!(104);
+impl_const_cast!(105);
+impl_const_cast!(106);
+impl_const_cast!(107);
+impl_const_cast!(108);
+impl_const_cast!(109);
+impl_const_cast!(110);
+impl_const_cast!(111);
+impl_const_cast!(112);
+impl_const_cast!(113);
+impl_const_cast!(114);
+impl_const_cast!(115);
+impl_const_cast!(116);
+impl_const_cast!(117);
+impl_const_cast!(118);
+impl_const_cast!(119);
+impl_const_cast!(120);
+impl_const_cast!(121);
+impl_const_cast!(122);
+impl_const_cast!(123);
+impl_const_cast!(124);
+impl_const_cast!(125);
+impl_const_cast!(126);
+impl_const_cast!(127);
+impl_const_cast!(128);
+
+pub trait Array {
+    const LEN: usize;
+}
+
+#[allow(dead_code)]
+const fn is_array<T: Array>() {}
+
+macro_rules! impl_array {
+    ($N:expr) => {
+        impl<T> Array for [T; $N] {
+            const LEN: usize = $N;
+        }
+
+        // this is needed to ensure that we keep
+        // implementation of traits in sync
+        const _: () = is_const_cast::<u16, Usize<$N>>();
+    };
+}
+
+impl_array!(0);
+impl_array!(1);
+impl_array!(2);
+impl_array!(3);
+impl_array!(4);
+impl_array!(5);
+impl_array!(6);
+impl_array!(7);
+impl_array!(8);
+impl_array!(9);
+impl_array!(10);
+impl_array!(11);
+impl_array!(12);
+impl_array!(13);
+impl_array!(14);
+impl_array!(15);
+impl_array!(16);
+impl_array!(17);
+impl_array!(18);
+impl_array!(19);
+impl_array!(20);
+impl_array!(21);
+impl_array!(22);
+impl_array!(23);
+impl_array!(24);
+impl_array!(25);
+impl_array!(26);
+impl_array!(27);
+impl_array!(28);
+impl_array!(29);
+impl_array!(30);
+impl_array!(31);
+impl_array!(32);
+impl_array!(33);
+impl_array!(34);
+impl_array!(35);
+impl_array!(36);
+impl_array!(37);
+impl_array!(38);
+impl_array!(39);
+impl_array!(40);
+impl_array!(41);
+impl_array!(42);
+impl_array!(43);
+impl_array!(44);
+impl_array!(45);
+impl_array!(46);
+impl_array!(47);
+impl_array!(48);
+impl_array!(49);
+impl_array!(50);
+impl_array!(51);
+impl_array!(52);
+impl_array!(53);
+impl_array!(54);
+impl_array!(55);
+impl_array!(56);
+impl_array!(57);
+impl_array!(58);
+impl_array!(59);
+impl_array!(60);
+impl_array!(61);
+impl_array!(62);
+impl_array!(63);
+impl_array!(64);
+impl_array!(65);
+impl_array!(66);
+impl_array!(67);
+impl_array!(68);
+impl_array!(69);
+impl_array!(70);
+impl_array!(71);
+impl_array!(72);
+impl_array!(73);
+impl_array!(74);
+impl_array!(75);
+impl_array!(76);
+impl_array!(77);
+impl_array!(78);
+impl_array!(79);
+impl_array!(80);
+impl_array!(81);
+impl_array!(82);
+impl_array!(83);
+impl_array!(84);
+impl_array!(85);
+impl_array!(86);
+impl_array!(87);
+impl_array!(88);
+impl_array!(89);
+impl_array!(90);
+impl_array!(91);
+impl_array!(92);
+impl_array!(93);
+impl_array!(94);
+impl_array!(95);
+impl_array!(96);
+impl_array!(97);
+impl_array!(98);
+impl_array!(99);
+impl_array!(100);
+impl_array!(101);
+impl_array!(102);
+impl_array!(103);
+impl_array!(104);
+impl_array!(105);
+impl_array!(106);
+impl_array!(107);
+impl_array!(108);
+impl_array!(109);
+impl_array!(110);
+impl_array!(111);
+impl_array!(112);
+impl_array!(113);
+impl_array!(114);
+impl_array!(115);
+impl_array!(116);
+impl_array!(117);
+impl_array!(118);
+impl_array!(119);
+impl_array!(120);
+impl_array!(121);
+impl_array!(122);
+impl_array!(123);
+impl_array!(124);
+impl_array!(125);
+impl_array!(126);
+impl_array!(127);
+impl_array!(128);

@@ -37,13 +37,21 @@
 //! assert_eq!(list.pop_front(), Some(0));
 //! ```
 
+mod cursor;
+mod iter;
 mod node;
 mod sailed;
 
-use node::Node;
-use sailed::Array;
+pub use cursor::Cursor;
+pub use iter::Iter;
 
-use std::ptr::NonNull;
+use node::{Node, NodeBuilder};
+use sailed::{Array, ConstCast, NonZero, Usize};
+
+use core::cmp::Ordering;
+use core::hash::{Hash, Hasher};
+use core::marker::PhantomData;
+use core::ptr::NonNull;
 
 /// A dynamic container that combines the characteristics of a `Vec` and a `LinkedList`,
 /// implemented as an **unrolled linked list** with chunked storage.
@@ -85,32 +93,79 @@ use std::ptr::NonNull;
 /// # Applications
 /// `ArrayList` is suitable for use cases where:
 /// - Frequent insertions or deletions occur in the middle of the list.
-/// - Memory efficiency and improved cache performance are priorities.
+/// - Memory efficiency and improved cache performance over plain LinkedList are priorities.
 /// - A hybrid structure that balances the strengths of `Vec` and `LinkedList` is needed.
 ///
 /// # Note
 /// The structure name `ArrayList` has no association with Java's `ArrayList`.
 pub struct ArrayList<T, const N: usize>
 where
-    [T; N]: Array<T, N>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     head: Option<NonNull<Node<T, N>>>,
     tail: Option<NonNull<Node<T, N>>>,
     len: usize,
+    marker: PhantomData<Box<Node<T, N>>>,
+}
+
+impl<T, const N: usize, const M: usize> From<[T; M]> for ArrayList<T, N>
+where
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn from(values: [T; M]) -> Self {
+        values.into_iter().collect()
+    }
 }
 
 impl<T, const N: usize> Default for ArrayList<T, N>
 where
-    [T; N]: Array<T, N>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
+impl<T, const N: usize> FromIterator<T> for ArrayList<T, N>
+where
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut this = Self::new();
+        this.extend(iter);
+        this
+    }
+}
+
+impl<T, const N: usize> Extend<T> for ArrayList<T, N>
+where
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        iter.into_iter().for_each(|v| self.push_back(v));
+    }
+}
+
+impl<'a, T, const N: usize> Extend<&'a T> for ArrayList<T, N>
+where
+    T: Clone,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
+        self.extend(iter.into_iter().cloned());
+    }
+}
+
 impl<T, const N: usize> ArrayList<T, N>
 where
-    [T; N]: Array<T, N>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     /// Creates a new, empty `ArrayList`.
     ///
@@ -135,6 +190,7 @@ where
             head: None,
             tail: None,
             len: 0,
+            marker: PhantomData,
         }
     }
 
@@ -165,8 +221,12 @@ where
             let head = unsafe { head_ptr.as_mut() };
 
             if head.is_full() {
-                let mut new_node = Box::new(Node::new_with_link(head_ptr.as_ptr() as usize));
-                new_node.push_front(value);
+                let new_node = Box::new(
+                    NodeBuilder::new()
+                        .set_link(head_ptr.as_ptr() as usize)
+                        .push_back(value)
+                        .build(),
+                );
 
                 // Get the pointer to the new node
                 let new_node_ptr: NonNull<Node<T, N>> = Box::leak(new_node).into();
@@ -190,8 +250,7 @@ where
             }
         } else {
             // The list is empty; create the first node
-            let mut new_node = Box::new(Node::new());
-            new_node.push_front(value);
+            let new_node = Box::new(NodeBuilder::new().push_back(value).build());
             // Make both head and tail point to the new node
             let new_node_ptr = Box::leak(new_node).into();
             self.head = Some(new_node_ptr);
@@ -229,8 +288,12 @@ where
             let tail = unsafe { tail_ptr.as_mut() };
 
             if tail.is_full() {
-                let mut new_node = Box::new(Node::new_with_link(tail_ptr.as_ptr() as usize));
-                new_node.push_back(value);
+                let new_node = Box::new(
+                    NodeBuilder::new()
+                        .set_link(tail_ptr.as_ptr() as usize)
+                        .push_back(value)
+                        .build(),
+                );
 
                 // Get the pointer to the new node
                 let new_node_ptr: NonNull<Node<T, N>> = Box::leak(new_node).into();
@@ -254,8 +317,7 @@ where
             }
         } else {
             // The list is empty; create the first node
-            let mut new_node = Box::new(Node::new());
-            new_node.push_back(value);
+            let new_node = Box::new(NodeBuilder::new().push_back(value).build());
             // Make both head and tail point to the new node
             let new_node_ptr = Box::leak(new_node).into();
             self.head = Some(new_node_ptr);
@@ -354,7 +416,7 @@ where
         // Move elements from the original node to the new node
         let src_ptr = unsafe { middle.data().as_ptr().add(split_index) };
         let dest_ptr = new_node.data_mut().as_mut_ptr();
-        unsafe { std::ptr::copy_nonoverlapping(src_ptr, dest_ptr, count_items) };
+        unsafe { core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, count_items) };
 
         // Update sizes for both nodes
         new_node.set_len(count_items);
@@ -447,7 +509,7 @@ where
         }
 
         if self.is_empty() {
-            *self = std::mem::replace(other, Self::new());
+            *self = core::mem::replace(other, Self::new());
             return;
         }
 
@@ -946,6 +1008,45 @@ where
         self.len() == 0
     }
 
+    /// Provides an iterator over list's elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use array_list::ArrayList;
+    ///
+    /// let mut list: ArrayList<_, 2> = ArrayList::new();
+    /// list.push_back(0);
+    /// list.push_back(1);
+    /// list.push_back(2);
+    ///
+    /// let mut iter = list.iter();
+    /// assert_eq!(iter.next(), Some(&0));
+    /// assert_eq!(iter.next(), Some(&1));
+    /// assert_eq!(iter.next(), Some(&2));
+    /// assert_eq!(iter.next(), None);
+    /// ```
+    #[inline]
+    pub fn iter(&self) -> Iter<'_, T, N> {
+        Iter::from_list(self)
+    }
+
+    /// Provides a cursor at the front element.
+    ///
+    /// The cursor is pointing to the “ghost” non-element if the list is empty.
+    #[inline]
+    pub fn cursor_front(&self) -> Cursor<'_, T, N> {
+        Cursor::from_front(self)
+    }
+
+    /// Provides a cursor at the back element.
+    ///
+    /// The cursor is pointing to the “ghost” non-element if the list is empty.
+    #[inline]
+    pub fn cursor_back(&self) -> Cursor<'_, T, N> {
+        Cursor::from_back(self)
+    }
+
     #[inline]
     fn get_closest(
         &self,
@@ -1119,18 +1220,127 @@ where
     }
 }
 
+impl<T, const N: usize> Clone for ArrayList<T, N>
+where
+    T: Clone,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn clone(&self) -> Self {
+        self.iter().cloned().collect()
+    }
+}
+
+impl<T, const N: usize> PartialEq for ArrayList<T, N>
+where
+    T: PartialEq,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len() && self.iter().eq(other)
+    }
+}
+
+impl<T, const N: usize> Eq for ArrayList<T, N>
+where
+    T: Eq,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+}
+
+impl<T, const N: usize> PartialOrd for ArrayList<T, N>
+where
+    T: PartialOrd,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.iter().partial_cmp(other)
+    }
+}
+
+impl<T, const N: usize> Ord for ArrayList<T, N>
+where
+    T: Ord,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.iter().cmp(other)
+    }
+}
+
+impl<T, const N: usize> Hash for ArrayList<T, N>
+where
+    T: Hash,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.len());
+        self.iter().for_each(|e| e.hash(state));
+    }
+}
+
+impl<T, const N: usize> core::fmt::Debug for ArrayList<T, N>
+where
+    T: core::fmt::Debug,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_list().entries(self).finish()
+    }
+}
+
+impl<'a, T, const N: usize> IntoIterator for &'a ArrayList<T, N>
+where
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    type Item = &'a T;
+    type IntoIter = Iter<'a, T, N>;
+
+    fn into_iter(self) -> Iter<'a, T, N> {
+        self.iter()
+    }
+}
+
 impl<T, const N: usize> Drop for ArrayList<T, N>
 where
-    [T; N]: Array<T, N>,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
 {
     fn drop(&mut self) {
         self.clear();
     }
 }
 
+unsafe impl<T, const N: usize> Send for ArrayList<T, N>
+where
+    T: Send,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+}
+
+unsafe impl<T, const N: usize> Sync for ArrayList<T, N>
+where
+    T: Sync,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+}
+
 #[cfg(test)]
 mod tests {
-    use std::mem::size_of;
+    use core::cmp::Ordering;
+    use core::mem::size_of;
+
+    use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
 
     use crate::ArrayList;
 
@@ -2018,16 +2228,10 @@ mod tests {
 
         // Append the second list into the first
         sut.append(&mut other);
+
         assert!(other.is_empty());
         assert_eq!(other.len(), 0);
 
-        other.push_back(100);
-        other.push_back(200);
-        assert_eq!(other.len(), 2);
-        assert_eq!(other.front(), Some(&100));
-        assert_eq!(other.back(), Some(&200));
-
-        // Verify the combined list
         assert_eq!(sut.len(), 6);
         assert_eq!(sut.get(0), Some(&10));
         assert_eq!(sut.get(1), Some(&20));
@@ -2036,9 +2240,32 @@ mod tests {
         assert_eq!(sut.get(4), Some(&50));
         assert_eq!(sut.get(5), Some(&60));
 
-        // Verify the combined list is still functional
+        // ensure appending an empty list does nothing
+        sut.append(&mut other);
+        assert_eq!(sut.len(), 6);
+        assert_eq!(sut.get(0), Some(&10));
+        assert_eq!(sut.get(1), Some(&20));
+        assert_eq!(sut.get(2), Some(&30));
+        assert_eq!(sut.get(3), Some(&40));
+        assert_eq!(sut.get(4), Some(&50));
+        assert_eq!(sut.get(5), Some(&60));
+
+        // ensure other remains functional
+        other.push_back(100);
+        other.push_back(200);
+        assert_eq!(other.len(), 2);
+        assert_eq!(other.front(), Some(&100));
+        assert_eq!(other.back(), Some(&200));
+
+        // ensure sut remains functional
         sut.push_back(70);
         assert_eq!(sut.len(), 7);
+        assert_eq!(sut.get(0), Some(&10));
+        assert_eq!(sut.get(1), Some(&20));
+        assert_eq!(sut.get(2), Some(&30));
+        assert_eq!(sut.get(3), Some(&40));
+        assert_eq!(sut.get(4), Some(&50));
+        assert_eq!(sut.get(5), Some(&60));
         assert_eq!(sut.get(6), Some(&70));
     }
 
@@ -2108,5 +2335,142 @@ mod tests {
         sut.push_back(40);
         assert_eq!(sut.len(), 4);
         assert_eq!(sut.get(3), Some(&40));
+    }
+
+    #[test]
+    fn from_iter_works_correctly() {
+        let sut: ArrayList<i32, 2> = ArrayList::from_iter(0..5);
+        assert!(!sut.is_empty());
+        assert_eq!(sut.len(), 5);
+        assert_eq!(sut.get(0), Some(&0));
+        assert_eq!(sut.get(1), Some(&1));
+        assert_eq!(sut.get(2), Some(&2));
+        assert_eq!(sut.get(3), Some(&3));
+        assert_eq!(sut.get(4), Some(&4));
+
+        assert_eq!(sut.front(), Some(&0));
+        assert_eq!(sut.back(), Some(&4));
+    }
+
+    #[test]
+    fn extend_works_correctly() {
+        let mut sut: ArrayList<i32, 2> = ArrayList::new();
+        sut.extend(0..5);
+        assert!(!sut.is_empty());
+        assert_eq!(sut.len(), 5);
+        assert_eq!(sut.get(0), Some(&0));
+        assert_eq!(sut.get(1), Some(&1));
+        assert_eq!(sut.get(2), Some(&2));
+        assert_eq!(sut.get(3), Some(&3));
+        assert_eq!(sut.get(4), Some(&4));
+
+        assert_eq!(sut.front(), Some(&0));
+        assert_eq!(sut.back(), Some(&4));
+    }
+
+    #[test]
+    fn extend_with_refs_works_correctly() {
+        let mut sut: ArrayList<i32, 2> = ArrayList::new();
+        sut.extend([0, 1, 2, 3, 4].iter());
+        assert!(!sut.is_empty());
+        assert_eq!(sut.len(), 5);
+        assert_eq!(sut.get(0), Some(&0));
+        assert_eq!(sut.get(1), Some(&1));
+        assert_eq!(sut.get(2), Some(&2));
+        assert_eq!(sut.get(3), Some(&3));
+        assert_eq!(sut.get(4), Some(&4));
+
+        assert_eq!(sut.front(), Some(&0));
+        assert_eq!(sut.back(), Some(&4));
+    }
+
+    #[test]
+    fn from_array_works_correctly() {
+        let sut: ArrayList<i32, 2> = ArrayList::from([0, 1, 2, 3, 4]);
+        assert!(!sut.is_empty());
+        assert_eq!(sut.len(), 5);
+        assert_eq!(sut.get(0), Some(&0));
+        assert_eq!(sut.get(1), Some(&1));
+        assert_eq!(sut.get(2), Some(&2));
+        assert_eq!(sut.get(3), Some(&3));
+        assert_eq!(sut.get(4), Some(&4));
+
+        assert_eq!(sut.front(), Some(&0));
+        assert_eq!(sut.back(), Some(&4));
+    }
+
+    #[test]
+    fn clone_works_correctly() {
+        let mut other: ArrayList<i32, 2> = ArrayList::from([0, 1, 2, 3, 4]);
+
+        let sut = other.clone();
+        assert!(!sut.is_empty());
+        assert_eq!(sut.len(), 5);
+        assert_eq!(sut.front(), Some(&0));
+        assert_eq!(sut.back(), Some(&4));
+        assert_eq!(sut.get(0), Some(&0));
+        assert_eq!(sut.get(1), Some(&1));
+        assert_eq!(sut.get(2), Some(&2));
+        assert_eq!(sut.get(3), Some(&3));
+        assert_eq!(sut.get(4), Some(&4));
+
+        other.clear();
+        let sut = other.clone();
+        assert!(sut.is_empty());
+        assert_eq!(sut.len(), 0);
+        assert_eq!(sut.front(), None);
+        assert_eq!(sut.back(), None);
+        assert_eq!(sut.get(0), None);
+    }
+
+    #[test]
+    fn eq_works_correctly() {
+        let l = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
+        let mut r = ArrayList::<usize, 2>::from([0, 2, 3, 4, 1]);
+
+        assert_eq!(l, l);
+        assert_eq!(r, r);
+        assert_ne!(l, r);
+
+        r.pop_back();
+        assert_ne!(l, r);
+
+        r.insert(1, 1);
+        assert_eq!(l, r);
+    }
+
+    #[test]
+    fn debug_works_correctly() {
+        let array = [0, 1, 2, 3, 4];
+        let list = ArrayList::<usize, 2>::from(array);
+        assert_eq!(format!("{list:?}"), format!("{:?}", array));
+    }
+
+    #[test]
+    fn cmp_works_correctly() {
+        let a = ArrayList::<usize, 2>::from([0, 1, 2]);
+        let b = ArrayList::<usize, 2>::from([4, 5, 6]);
+        assert_eq!(a.cmp(&a), Ordering::Equal);
+        assert_eq!(a.cmp(&b), Ordering::Less);
+        assert_eq!(b.cmp(&a), Ordering::Greater);
+    }
+
+    #[test]
+    fn partial_cmp_works_correctly() {
+        let a = ArrayList::<f64, 2>::from([0.0, 1.0, 2.0]);
+        let b = ArrayList::<f64, 2>::from([4.0, 5.0, 6.0]);
+        assert_eq!(a.partial_cmp(&a), Some(Ordering::Equal));
+        assert_eq!(a.partial_cmp(&b), Some(Ordering::Less));
+        assert_eq!(b.partial_cmp(&a), Some(Ordering::Greater));
+    }
+
+    #[test]
+    fn hash_works_correctly() {
+        let bh = BuildHasherDefault::<DefaultHasher>::default();
+        let a = ArrayList::<usize, 2>::from([0, 1, 2]);
+        let b = ArrayList::<usize, 2>::from([4, 5, 6]);
+        assert_ne!(bh.hash_one(&a), bh.hash_one(&b));
+        assert_eq!(bh.hash_one(&a), bh.hash_one(&a));
+        assert_eq!(bh.hash_one(&a), bh.hash_one(&(a.clone())));
     }
 }
