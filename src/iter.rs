@@ -94,24 +94,34 @@ where
         }
 
         let front = self.front.unwrap();
+        let node = unsafe { front.as_ref() };
+        if (self.front_index as usize) >= node.len() {
+            let new_front = NonNull::new(
+                (node.link() ^ self.front_prev.map_or(0, |node| node.as_ptr() as usize))
+                    as *mut Node<T, N>,
+            );
 
-        if (self.front_index as usize) < unsafe { front.as_ref().len() } {
-            let current_index = self.front_index as usize;
-            self.front_index += 1;
-            self.len -= 1;
-            return unsafe { front.as_ref().get(current_index) };
+            self.front_index = 0;
+            self.front_prev = self.front;
+            self.front = new_front;
         }
 
-        self.front_index = 0;
-        let new_front = NonNull::new(
-            (unsafe { front.as_ref().link() }
-                ^ self.front_prev.map_or(0, |node| node.as_ptr() as usize))
-                as *mut Node<T, N>,
-        );
+        let front = self.front.unwrap();
+        let node = unsafe { front.as_ref() };
+        let out = node.get(self.front_index as usize);
+        self.front_index += 1;
+        self.len -= 1;
+        out
+    }
 
-        self.front_prev = self.front;
-        self.front = new_front;
-        self.next()
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
     }
 }
 
@@ -125,28 +135,23 @@ where
             return None;
         }
 
-        let back = self.back.unwrap();
         let current_index = self.back_index as usize;
-        let out = unsafe { back.as_ref().get(current_index) };
+        let current = unsafe { self.back.unwrap().as_ref() };
 
-        self.len -= 1;
         if current_index == 0 {
             let new_back = NonNull::new(
-                (unsafe { back.as_ref().link() }
-                    ^ self.back_prev.map_or(0, |node| node.as_ptr() as usize))
+                (current.link() ^ self.back_prev.map_or(0, |node| node.as_ptr() as usize))
                     as *mut Node<T, N>,
             );
 
-            self.back_index = new_back.map_or(0, |node| unsafe {
-                node.as_ref().len().saturating_sub(1) as u16
-            });
+            self.back_index = new_back.map_or(0, |node| unsafe { node.as_ref().len() as u16 });
             self.back_prev = self.back;
             self.back = new_back;
-        } else {
-            self.back_index -= 1;
         }
 
-        out
+        self.back_index = self.back_index.saturating_sub(1);
+        self.len -= 1;
+        current.get(current_index)
     }
 }
 
@@ -265,6 +270,14 @@ mod tests {
 
         assert_eq!(sut.next(), None);
         assert_eq!(sut.len(), 0);
+    }
+
+    #[test]
+    fn last_works_correctly() {
+        let array = [0, 1, 2, 3, 4];
+        let list = ArrayList::<usize, 2>::from(array);
+        let sut = list.iter();
+        assert_eq!(sut.last(), Some(&4));
     }
 
     #[test]
