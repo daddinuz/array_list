@@ -39,11 +39,13 @@
 
 mod cursor;
 mod iter;
+mod iter_mut;
 mod node;
 mod sailed;
 
 pub use cursor::Cursor;
 pub use iter::Iter;
+pub use iter_mut::IterMut;
 
 use node::{Node, NodeBuilder};
 use sailed::{Array, ConstCast, NonZero, Usize};
@@ -1029,6 +1031,29 @@ where
     #[inline]
     pub fn iter(&self) -> Iter<'_, T, N> {
         Iter::from_list(self)
+    }
+
+    /// Provides an iterator over list's elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use array_list::ArrayList;
+    ///
+    /// let mut list: ArrayList<_, 2> = ArrayList::new();
+    /// list.push_back(0);
+    /// list.push_back(1);
+    /// list.push_back(2);
+    ///
+    /// let mut iter = list.iter_mut();
+    /// assert_eq!(iter.next(), Some(&mut 0));
+    /// assert_eq!(iter.next(), Some(&mut 1));
+    /// assert_eq!(iter.next(), Some(&mut 2));
+    /// assert_eq!(iter.next(), None);
+    /// ```
+    #[inline]
+    pub fn iter_mut(&mut self) -> IterMut<'_, T, N> {
+        IterMut::from_list(self)
     }
 
     /// Provides a cursor at the front element.
