@@ -1,5 +1,6 @@
 use core::iter::FusedIterator;
 use core::marker::PhantomData;
+use core::mem::ManuallyDrop;
 use core::ptr::NonNull;
 
 use crate::node::Node;
@@ -28,11 +29,10 @@ where
     marker: PhantomData<&'a Node<T, N>>,
 }
 
-const _: [(); std::mem::size_of::<usize>() * 6] = [(); std::mem::size_of::<Iter<usize, 2>>()];
+const _: [(); core::mem::size_of::<usize>() * 6] = [(); core::mem::size_of::<Iter<usize, 2>>()];
 
-impl<'a, T, const N: usize> Default for Iter<'a, T, N>
+impl<T, const N: usize> Default for Iter<'_, T, N>
 where
-    T: 'a,
     [T; N]: Array,
     Usize<N>: NonZero + ConstCast<u16>,
 {
@@ -50,13 +50,12 @@ where
     }
 }
 
-impl<'a, T, const N: usize> Iter<'a, T, N>
+impl<T, const N: usize> Iter<'_, T, N>
 where
-    T: 'a,
     [T; N]: Array,
     Usize<N>: NonZero + ConstCast<u16>,
 {
-    pub(crate) fn from_list(list: &'a ArrayList<T, N>) -> Self {
+    pub(crate) fn from_list(list: &ArrayList<T, N>) -> Self {
         Self {
             front_prev: None,
             front: list.head,
@@ -72,9 +71,8 @@ where
     }
 }
 
-impl<'a, T, const N: usize> Clone for Iter<'a, T, N>
+impl<T, const N: usize> Clone for Iter<'_, T, N>
 where
-    T: 'a,
     [T; N]: Array,
     Usize<N>: NonZero + ConstCast<u16>,
 {
@@ -85,7 +83,6 @@ where
 
 impl<'a, T, const N: usize> Iterator for Iter<'a, T, N>
 where
-    T: 'a,
     [T; N]: Array,
     Usize<N>: NonZero + ConstCast<u16>,
 {
@@ -118,9 +115,8 @@ where
     }
 }
 
-impl<'a, T, const N: usize> DoubleEndedIterator for Iter<'a, T, N>
+impl<T, const N: usize> DoubleEndedIterator for Iter<'_, T, N>
 where
-    T: 'a,
     [T; N]: Array,
     Usize<N>: NonZero + ConstCast<u16>,
 {
@@ -154,9 +150,8 @@ where
     }
 }
 
-impl<'a, T, const N: usize> ExactSizeIterator for Iter<'a, T, N>
+impl<T, const N: usize> ExactSizeIterator for Iter<'_, T, N>
 where
-    T: 'a,
     [T; N]: Array,
     Usize<N>: NonZero + ConstCast<u16>,
 {
@@ -165,24 +160,30 @@ where
     }
 }
 
-impl<T, const N: usize> std::fmt::Debug for Iter<'_, T, N>
-where
-    T: std::fmt::Debug,
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Iter(")?;
-        f.debug_list().entries(self.clone()).finish()?;
-        write!(f, ", {})", self.len())
-    }
-}
-
 impl<T, const N: usize> FusedIterator for Iter<'_, T, N>
 where
     [T; N]: Array,
     Usize<N>: NonZero + ConstCast<u16>,
 {
+}
+
+impl<T, const N: usize> core::fmt::Debug for Iter<'_, T, N>
+where
+    T: core::fmt::Debug,
+    [T; N]: Array,
+    Usize<N>: NonZero + ConstCast<u16>,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("Iter")
+            .field(&*ManuallyDrop::new(ArrayList {
+                head: self.front,
+                tail: self.back,
+                len: self.len,
+                marker: PhantomData,
+            }))
+            .field(&self.len)
+            .finish()
+    }
 }
 
 unsafe impl<T, const N: usize> Send for Iter<'_, T, N>

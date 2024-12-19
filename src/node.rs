@@ -50,7 +50,7 @@ where
             let data_ptr = self.data.as_mut_ptr();
 
             // Shift elements starting from the index to the right
-            std::ptr::copy(
+            core::ptr::copy(
                 data_ptr.add(index),
                 data_ptr.add(index + 1),
                 self.len() - index,
@@ -91,7 +91,7 @@ where
         unsafe {
             // Shift elements from `index + 1` to fill the gap
             let data_ptr = self.data.as_mut_ptr();
-            std::ptr::copy(
+            core::ptr::copy(
                 data_ptr.add(index + 1),
                 data_ptr.add(index),
                 self.len() - index - 1,

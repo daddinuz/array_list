@@ -416,7 +416,7 @@ where
         // Move elements from the original node to the new node
         let src_ptr = unsafe { middle.data().as_ptr().add(split_index) };
         let dest_ptr = new_node.data_mut().as_mut_ptr();
-        unsafe { std::ptr::copy_nonoverlapping(src_ptr, dest_ptr, count_items) };
+        unsafe { core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, count_items) };
 
         // Update sizes for both nodes
         new_node.set_len(count_items);
@@ -509,7 +509,7 @@ where
         }
 
         if self.is_empty() {
-            *self = std::mem::replace(other, Self::new());
+            *self = core::mem::replace(other, Self::new());
             return;
         }
 
@@ -1285,13 +1285,13 @@ where
     }
 }
 
-impl<T, const N: usize> std::fmt::Debug for ArrayList<T, N>
+impl<T, const N: usize> core::fmt::Debug for ArrayList<T, N>
 where
-    T: std::fmt::Debug,
+    T: core::fmt::Debug,
     [T; N]: Array,
     Usize<N>: NonZero + ConstCast<u16>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_list().entries(self).finish()
     }
 }
@@ -1337,9 +1337,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
+    use core::cmp::Ordering;
+    use core::mem::size_of;
+
     use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
-    use std::mem::size_of;
 
     use crate::ArrayList;
 

@@ -23,7 +23,7 @@ where
     list: &'a ArrayList<T, N>,
 }
 
-const _: [(); std::mem::size_of::<usize>() * 5] = [(); std::mem::size_of::<Cursor<usize, 2>>()];
+const _: [(); core::mem::size_of::<usize>() * 5] = [(); core::mem::size_of::<Cursor<usize, 2>>()];
 
 impl<'a, T, const N: usize> Cursor<'a, T, N>
 where
@@ -176,13 +176,13 @@ where
     }
 }
 
-impl<T, const N: usize> std::fmt::Debug for Cursor<'_, T, N>
+impl<T, const N: usize> core::fmt::Debug for Cursor<'_, T, N>
 where
-    T: std::fmt::Debug,
+    T: core::fmt::Debug,
     [T; N]: Array,
     Usize<N>: NonZero + ConstCast<u16>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("Cursor")
             .field(self.list)
             .field(&self.global_index)
