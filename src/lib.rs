@@ -1,24 +1,22 @@
 //! # array_list
 //!
-//! `array_list` is a Rust crate that implements an **unrolled linked list** with features that
-//! combine the simplicity of a `Vec` and the flexibility of a `LinkedList`.
-//!
-//! The underlying linked list is built using a **XOR linked list**.
-//! This design requires only a single pointer for bidirectional traversal,
-//! making it more memory-efficient compared to a traditional doubly linked list,
-//! which requires two pointers per node.
+//! `array_list` implements an **unrolled linked list** -like datastructure with features
+//! that combine the simplicity of a `Vec` and the flexibility of a `LinkedList`.
 //!
 //! ## Features
-//! - Efficient traversal in both directions with minimal memory overhead.
-//! - Chunked storage for elements (unrolled list), which improves cache locality and reduces
+//! - Ordered sequence with index based elements access and
+//!   efficient random access lookups.
+//! - Chunked storage, which improves cache locality and reduces
 //!   pointer overhead compared to traditional linked lists.
-//! - Dynamic growth, striking a balance between `Vec` and `LinkedList` performance characteristics.
+//! - Stable `Cursor` API similar to the `LinkedList` one on nightly, allowing
+//!   efficient operations around a point in the list.
+//! - Dynamic growth, balancing between `Vec` and `LinkedList` characteristics.
 //!
 //! ## Use Cases
 //! `array_list` is ideal for scenarios where:
-//! - You require frequent insertions and deletions in the middle of the list.
-//! - Memory efficiency is crucial, and you want to minimize pointer overhead.
-//! - Improved cache performance over a standard linked list is desired.
+//! - You need a ordered collection with random access capabilities.
+//! - You require frequent insertions and deletions anywhere in the list.
+//! - Memory efficiency and improved cache performance over plain LinkedList are priorities.
 //!
 //! ## Note
 //! This crate is not related to Java's `ArrayList` despite its name.  
@@ -29,49 +27,54 @@
 //! use array_list::ArrayList;
 //!
 //! let mut list: ArrayList<i64, 6> = ArrayList::new();
-//! list.push_back(1);
 //! list.push_back(2);
 //! list.push_front(0);
+//! list.insert(1, 1);
 //!
+//! assert_eq!(list.front(), Some(&0));
+//! assert_eq!(list.get(1), Some(&1));
+//! assert_eq!(list.back(), Some(&2));
+//!
+//! assert_eq!(list.remove(1), Some(1));
 //! assert_eq!(list.pop_back(), Some(2));
 //! assert_eq!(list.pop_front(), Some(0));
 //! ```
 
+#![cfg_attr(feature = "nightly_tests", feature(linked_list_cursors))]
+
 mod cursor;
+mod cursor_mut;
+mod into_iter;
 mod iter;
-mod node;
+mod iter_mut;
 mod sailed;
 
 pub use cursor::Cursor;
+pub use cursor_mut::CursorMut;
 pub use iter::Iter;
+pub use iter_mut::IterMut;
 
-use node::{Node, NodeBuilder};
-use sailed::{Array, ConstCast, NonZero, Usize};
+use std::cmp::Ordering;
+use std::collections::VecDeque;
+use std::hash::{Hash, Hasher};
 
-use core::cmp::Ordering;
-use core::hash::{Hash, Hasher};
-use core::marker::PhantomData;
-use core::ptr::NonNull;
+use crate::into_iter::IntoIter;
 
-/// A dynamic container that combines the characteristics of a `Vec` and a `LinkedList`,
-/// implemented as an **unrolled linked list** with chunked storage.
+pub enum Usize<const N: usize> {}
+
+pub trait ChunkCapacity: crate::sailed::Sailed {}
+
+/// A dynamic container that combines the characteristics of a `Vec` and a `LinkedList`.
 ///
-/// The `ArrayList` is backed by a **XOR linked list**, requiring only a single pointer
-/// for bidirectional traversal between nodes. This design is both memory-efficient
-/// and optimized for cache locality compared to traditional doubly linked lists.
+/// # Features
+/// - **Chunked Storage**: Each chunk can hold up to `N` elements, reducing the overhead of
+///   individual allocations compared to a traditional linked list.
+/// - **Flexible Operations**: Index based lookups and efficient insertions, deletions, and access
+///   at arbitrary positions.
 ///
 /// # Type Parameters
 /// - `T`: The type of elements stored in the list.
-/// - `N`: The maximum number of elements that each node (or chunk) can hold.
-///        This determines the granularity of the unrolled linked list.
-///        Larger values reduce the number of nodes but increase the size of each node.
-///
-/// # Features
-/// - **Chunked Storage**: Each node can hold up to `N` elements, reducing the overhead of
-///   individual allocations compared to a traditional linked list.
-/// - **Memory Efficiency**: The XOR linked list design minimizes pointer storage requirements.
-/// - **Bidirectional Traversal**: Supports efficient iteration in both forward and backward directions.
-/// - **Flexible Operations**: Allows efficient insertions, deletions, and access at arbitrary positions.
+/// - `N`: The maximum number of elements that each chunk can hold.
 ///
 /// # Example
 /// ```rust
@@ -89,50 +92,26 @@ use core::ptr::NonNull;
 /// assert_eq!(list.pop_front(), Some(2));
 /// assert_eq!(list.pop_front(), Some(3));
 /// ```
-///
-/// # Applications
-/// `ArrayList` is suitable for use cases where:
-/// - Frequent insertions or deletions occur in the middle of the list.
-/// - Memory efficiency and improved cache performance over plain LinkedList are priorities.
-/// - A hybrid structure that balances the strengths of `Vec` and `LinkedList` is needed.
-///
-/// # Note
-/// The structure name `ArrayList` has no association with Java's `ArrayList`.
 pub struct ArrayList<T, const N: usize>
 where
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
-    head: Option<NonNull<Node<T, N>>>,
-    tail: Option<NonNull<Node<T, N>>>,
+    chunks: VecDeque<VecDeque<T>>,
     len: usize,
-    marker: PhantomData<Box<Node<T, N>>>,
 }
 
 impl<T, const N: usize, const M: usize> From<[T; M]> for ArrayList<T, N>
 where
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
     fn from(values: [T; M]) -> Self {
         values.into_iter().collect()
     }
 }
 
-impl<T, const N: usize> Default for ArrayList<T, N>
-where
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<T, const N: usize> FromIterator<T> for ArrayList<T, N>
 where
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let mut this = Self::new();
@@ -143,38 +122,49 @@ where
 
 impl<T, const N: usize> Extend<T> for ArrayList<T, N>
 where
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
-        iter.into_iter().for_each(|v| self.push_back(v));
+        let iter = &mut iter.into_iter().peekable();
+
+        if let Some(chunk) = self.chunks.back_mut() {
+            chunk.extend(iter.take(N - chunk.len()));
+        }
+
+        while iter.peek().is_some() {
+            let mut chunk = VecDeque::with_capacity(N);
+            chunk.extend(iter.take(N));
+
+            self.len += chunk.len();
+            self.chunks.push_back(chunk);
+        }
     }
 }
 
 impl<'a, T, const N: usize> Extend<&'a T> for ArrayList<T, N>
 where
     T: Clone,
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
     fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
         self.extend(iter.into_iter().cloned());
     }
 }
 
+impl<T, const N: usize> Default for ArrayList<T, N>
+where
+    Usize<N>: ChunkCapacity,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T, const N: usize> ArrayList<T, N>
 where
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
-    /// Creates a new, empty `ArrayList`.
-    ///
-    /// This constructor initializes an `ArrayList` with no elements and no allocated nodes.
-    /// It is a constant function, allowing the creation of `ArrayList` instances in
-    /// compile-time contexts where applicable.
-    ///
-    /// # Returns
-    /// A new, empty instance of `ArrayList`.
+    /// Creates a new, empty `ArrayList` with no elements and no allocated chunks.
     ///
     /// # Example
     /// ```rust
@@ -184,24 +174,18 @@ where
     ///
     /// assert!(list.is_empty());
     /// ```
-    #[inline]
     pub const fn new() -> Self {
         Self {
-            head: None,
-            tail: None,
+            chunks: VecDeque::new(),
             len: 0,
-            marker: PhantomData,
         }
     }
 
     /// Adds an element to the front of the `ArrayList`.
     ///
     /// The element is inserted at the beginning of the list, shifting existing elements
-    /// forward if necessary. If the first node is full, a new node will be allocated to
+    /// forward if necessary. If the first chunk is full, a new one will be allocated to
     /// accommodate the element.
-    ///
-    /// # Parameters
-    /// - `value`: The element to add to the front of the `ArrayList`.
     ///
     /// # Example
     /// ```rust
@@ -217,58 +201,23 @@ where
     /// assert_eq!(list.pop_front(), Some(10));
     /// ```
     pub fn push_front(&mut self, value: T) {
-        if let Some(mut head_ptr) = self.head {
-            let head = unsafe { head_ptr.as_mut() };
-
-            if head.is_full() {
-                let new_node = Box::new(
-                    NodeBuilder::new()
-                        .set_link(head_ptr.as_ptr() as usize)
-                        .push_back(value)
-                        .build(),
-                );
-
-                // Get the pointer to the new node
-                let new_node_ptr: NonNull<Node<T, N>> = Box::leak(new_node).into();
-
-                // Update the link in the current head with the XOR of the new node and its next node
-                //
-                // Before update:
-                // link(head) = addr(prev(head)) ^ addr(next(head)) | prev(head) = null
-                //            = null             ^ addr(next(head))
-                //            = addr(next(head))
-                //
-                // After update:
-                // link(head) = addr(new_node) ^ addr(next(head))
-                *head.link_mut() ^= new_node_ptr.as_ptr() as usize;
-
-                // Update the head pointer
-                self.head = Some(new_node_ptr);
-            } else {
-                // There's room in the head node; insert at the front
-                head.push_front(value);
+        match self.chunks.front_mut() {
+            Some(chunk) if chunk.len() < N => chunk.push_front(value),
+            _ => {
+                let mut chunk = VecDeque::with_capacity(N);
+                chunk.push_front(value);
+                self.chunks.push_front(chunk)
             }
-        } else {
-            // The list is empty; create the first node
-            let new_node = Box::new(NodeBuilder::new().push_back(value).build());
-            // Make both head and tail point to the new node
-            let new_node_ptr = Box::leak(new_node).into();
-            self.head = Some(new_node_ptr);
-            self.tail = Some(new_node_ptr);
         }
 
-        // Increment the len of the list
         self.len += 1;
     }
 
     /// Adds an element to the back of the `ArrayList`.
     ///
     /// The element is inserted at the end of the list.
-    /// If the last node is full, a new node will be allocated to
+    /// If the last chunk is full, a new one will be allocated to
     /// accommodate the element.
-    ///
-    /// # Parameters
-    /// - `value`: The element to add to the back of the `ArrayList`.
     ///
     /// # Example
     /// ```rust
@@ -284,67 +233,23 @@ where
     /// assert_eq!(list.pop_back(), Some(10));
     /// ```
     pub fn push_back(&mut self, value: T) {
-        if let Some(mut tail_ptr) = self.tail {
-            let tail = unsafe { tail_ptr.as_mut() };
-
-            if tail.is_full() {
-                let new_node = Box::new(
-                    NodeBuilder::new()
-                        .set_link(tail_ptr.as_ptr() as usize)
-                        .push_back(value)
-                        .build(),
-                );
-
-                // Get the pointer to the new node
-                let new_node_ptr: NonNull<Node<T, N>> = Box::leak(new_node).into();
-
-                // Update the link in the current tail with the XOR of the new node and its previous node
-                //
-                // Before update:
-                // link(tail) = addr(prev(tail)) ^ addr(next(tail)) | next(tail) = null
-                //            = addr(prev(tail)) ^ null
-                //            = addr(prev(tail))
-                //
-                // After update:
-                // link(tail) = addr(prev(tail)) ^ addr(new_node)
-                *tail.link_mut() ^= new_node_ptr.as_ptr() as usize;
-
-                // Update the head pointer
-                self.tail = Some(new_node_ptr);
-            } else {
-                // There's room in the tail node; insert at the end
-                tail.push_back(value);
+        match self.chunks.back_mut() {
+            Some(chunk) if chunk.len() < N => chunk.push_back(value),
+            _ => {
+                let mut chunk = VecDeque::with_capacity(N);
+                chunk.push_front(value);
+                self.chunks.push_back(chunk)
             }
-        } else {
-            // The list is empty; create the first node
-            let new_node = Box::new(NodeBuilder::new().push_back(value).build());
-            // Make both head and tail point to the new node
-            let new_node_ptr = Box::leak(new_node).into();
-            self.head = Some(new_node_ptr);
-            self.tail = Some(new_node_ptr);
         }
 
-        // Increment the len of the list
         self.len += 1;
     }
 
     /// Inserts an element at the specified index, shifting subsequent elements to the right.
-    ///
-    /// # Arguments
-    /// - `index`: The position at which to insert the new element.
-    /// - `value`: The value to insert.
+    /// If the target chunk is full, a new one will be allocated to accommodate the element.
     ///
     /// # Panics
     /// - Panics if the `index` is out of bounds (greater than the list's current length).
-    ///
-    /// # Behavior
-    /// - Traverses the list to locate the appropriate node and index.
-    /// - If the target node is full, the method splits the node, redistributes elements,
-    ///   and inserts the value.
-    ///
-    /// # Complexity
-    /// - O(n) for traversal to find the target node.
-    /// - O(N) within the node for shifting elements, where `N` is the node's capacity.
     ///
     /// # Examples
     /// ```
@@ -360,128 +265,73 @@ where
     /// assert_eq!(list.get(2), Some(&30));
     /// ```
     pub fn insert(&mut self, index: usize, value: T) {
-        if index > self.len {
-            panic!("Index out of bounds");
-        }
+        assert!(index <= self.len());
 
-        if index == 0 {
+        let SearchTarget {
+            chunk_index,
+            target_index,
+        } = self.search_target(index).unwrap_or_else(|| SearchTarget {
+            chunk_index: self.chunks.len().saturating_sub(1),
+            target_index: self.chunks.back().map(VecDeque::len).unwrap_or(0),
+        });
+
+        self.raw_insert(chunk_index, target_index, value);
+    }
+
+    fn raw_insert(&mut self, chunk_index: usize, target_index: usize, value: T) {
+        if chunk_index == 0 && target_index == 0 {
             self.push_front(value);
             return;
         }
 
-        if index == self.len {
+        let chunks_len = self.chunks.len();
+        assert!(chunk_index < chunks_len);
+
+        let chunk = &mut self.chunks[chunk_index];
+        assert!(target_index <= chunk.len());
+
+        if chunk_index + 1 >= chunks_len && target_index >= chunk.len() {
             self.push_back(value);
             return;
         }
 
-        let (left, middle, right, index) = self.get_closest_mut(index).unwrap();
+        if target_index >= N {
+            let mut chunk = VecDeque::with_capacity(N);
+            chunk.push_front(value);
 
-        if !middle.is_full() {
-            middle.insert(index, value);
+            self.chunks.insert(chunk_index + 1, chunk);
             self.len += 1;
             return;
         }
 
-        if let Some(mut left) = left {
-            let left = unsafe { left.as_mut() };
-            if !left.is_full() {
-                if index == 0 {
-                    left.push_back(value);
-                } else {
-                    let tmp = middle.pop_front().unwrap();
-                    left.push_back(tmp);
-                    middle.insert(index - 1, value);
+        if chunk.len() >= N {
+            let spilled_value = chunk.pop_back().unwrap();
+
+            match self.chunks.get_mut(chunk_index + 1) {
+                Some(chunk) if chunk.len() < N => chunk.push_front(spilled_value),
+                next_chunk => {
+                    let mut chunk = VecDeque::with_capacity(N);
+                    chunk.push_front(spilled_value);
+
+                    if next_chunk.is_none() {
+                        self.chunks.push_back(chunk);
+                    } else {
+                        self.chunks.insert(chunk_index + 1, chunk);
+                    }
                 }
-                self.len += 1;
-                return;
             }
         }
 
-        if let Some(mut right) = right {
-            let right = unsafe { right.as_mut() };
-            if !right.is_full() {
-                let tmp = middle.pop_back().unwrap();
-                right.push_front(tmp);
-                middle.insert(index, value);
-                self.len += 1;
-                return;
-            }
-        }
-
-        // Create a new node
-        let mut new_node = Box::new(Node::new());
-        let split_index = N / 2;
-        let count_items = N - split_index;
-
-        // Move elements from the original node to the new node
-        let src_ptr = unsafe { middle.data().as_ptr().add(split_index) };
-        let dest_ptr = new_node.data_mut().as_mut_ptr();
-        unsafe { core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, count_items) };
-
-        // Update sizes for both nodes
-        new_node.set_len(count_items);
-        middle.set_len(split_index);
-
-        // Insert the value into the appropriate node
-        if index <= split_index {
-            middle.insert(index, value);
-        } else {
-            new_node.insert(index - split_index, value);
-        }
-
-        let mut middle_ptr: NonNull<Node<T, N>> = unsafe { NonNull::new_unchecked(middle as _) };
-
-        // remove middle mut ref from scope
-        #[allow(unused_variables)]
-        let middle = ();
-
-        // Handle the case where the list contains only one node
-        if self.head == self.tail {
-            // Update the links for the old and new nodes
-            *new_node.link_mut() = middle_ptr.as_ptr() as usize;
-
-            let new_node_ptr: NonNull<Node<T, N>> = Box::leak(new_node).into();
-            unsafe { *middle_ptr.as_mut().link_mut() = new_node_ptr.as_ptr() as usize };
-
-            // Update the head and tail of the list
-            self.head = Some(middle_ptr);
-            self.tail = Some(new_node_ptr);
-        } else {
-            // Update the link for the new node
-            *new_node.link_mut() =
-                middle_ptr.as_ptr() as usize ^ right.map_or(0, |p| p.as_ptr() as usize);
-
-            let new_node_ptr: NonNull<Node<T, N>> = Box::leak(new_node).into();
-
-            // Update the link for the node at the right of the new node
-            if let Some(mut right) = right {
-                let right = unsafe { right.as_mut() };
-                *right.link_mut() ^= middle_ptr.as_ptr() as usize ^ new_node_ptr.as_ptr() as usize;
-            }
-
-            // Update the current node's link
-            unsafe {
-                *middle_ptr.as_mut().link_mut() ^=
-                    right.map_or(0, |p| p.as_ptr() as usize) ^ new_node_ptr.as_ptr() as usize
-            };
-
-            // Update tail if necessary
-            if Some(middle_ptr) == self.tail {
-                self.tail = Some(new_node_ptr);
-            }
-        }
-
+        let chunk = &mut self.chunks[chunk_index];
+        chunk.insert(target_index, value);
+        debug_assert!(chunk.capacity() <= N);
         self.len += 1;
     }
 
-    /// Moves all elements from other to the end of the list.
+    /// Moves all elements from the `other` list to the end of this one.
     ///
-    /// This reuses all the nodes from other and moves them into self.
+    /// This reuses all the chunks from other list and moves them into self.
     /// After this operation, other becomes empty.
-    ///
-    /// # Complexity
-    /// - Time complexity: O(1)
-    /// - Memory complexity: O(1)
     ///
     /// # Example
     /// ```rust
@@ -504,41 +354,13 @@ where
     /// assert_eq!(list1.get(3), Some(&4));
     /// ```
     pub fn append(&mut self, other: &mut Self) {
-        if other.is_empty() {
-            return;
-        }
-
-        if self.is_empty() {
-            *self = core::mem::replace(other, Self::new());
-            return;
-        }
-
-        let mut self_tail = self.tail.unwrap();
-
-        let mut other_head = other.head.take().unwrap();
-        let other_tail = other.tail.take().unwrap();
-
-        unsafe { *self_tail.as_mut().link_mut() ^= other_head.as_ptr() as usize };
-        unsafe { *other_head.as_mut().link_mut() ^= self_tail.as_ptr() as usize };
-
-        self.tail = Some(other_tail);
+        self.chunks.append(&mut other.chunks);
         self.len += other.len;
         other.len = 0;
     }
 
     /// Removes and returns the first element of the `ArrayList`, if any.
-    ///
-    /// This method removes the first element of the list and adjusts the head pointer
-    /// and internal structure accordingly. If the list is empty, it returns `None`.
-    ///
-    /// # Returns
-    /// - `Some(T)` if the list contains elements, where `T` is the removed element.
-    /// - `None` if the list is empty.
-    ///
-    /// # Complexity
-    /// - O(1) when the first element is removed and there are no structural changes
-    ///   (e.g., the head node has more elements).
-    /// - O(1) amortized, including the occasional node removal and re-linking operations.
+    /// If the list is empty, it returns `None`.
     ///
     /// # Examples
     /// ```
@@ -553,47 +375,19 @@ where
     /// assert_eq!(list.pop_front(), None);
     /// ```
     pub fn pop_front(&mut self) -> Option<T> {
-        if let Some(mut head_ptr) = self.head {
-            let head = unsafe { head_ptr.as_mut() };
-            let value = head.pop_front()?;
-            self.len -= 1;
+        let chunk = self.chunks.front_mut()?;
 
-            if head.is_empty() {
-                if let Some(mut new_head_ptr) = NonNull::new(head.link() as *mut Node<T, N>) {
-                    // Update the link in the next node to exclude the current head
-                    let new_head = unsafe { new_head_ptr.as_mut() };
-                    *new_head.link_mut() ^= head_ptr.as_ptr() as usize;
-                    self.head = Some(new_head_ptr);
-                } else {
-                    // Empty the list
-                    assert!(self.is_empty());
-                    self.head = None;
-                    self.tail = None;
-                }
-
-                // Deallocate the old head node
-                drop(unsafe { Box::from_raw(head_ptr.as_ptr()) });
-            }
-
-            return Some(value);
+        let value = chunk.pop_front();
+        if chunk.is_empty() {
+            self.chunks.pop_front();
         }
 
-        None
+        self.len -= 1;
+        value
     }
 
     /// Removes and returns the last element of the `ArrayList`, if any.
-    ///
-    /// This method removes the last element of the list and adjusts the tail pointer
-    /// and internal structure accordingly. If the list is empty, it returns `None`.
-    ///
-    /// # Returns
-    /// - `Some(T)` if the list contains elements, where `T` is the removed element.
-    /// - `None` if the list is empty.
-    ///
-    /// # Complexity
-    /// - O(1) when the last element is removed and there are no structural changes
-    ///   (e.g., the tail node has more elements).
-    /// - O(1) amortized, including the occasional node removal and re-linking operations.
+    /// If the list is empty, it returns `None`.
     ///
     /// # Examples
     /// ```
@@ -608,53 +402,18 @@ where
     /// assert_eq!(list.pop_back(), None);
     /// ```
     pub fn pop_back(&mut self) -> Option<T> {
-        if let Some(mut tail_ptr) = self.tail {
-            let tail = unsafe { tail_ptr.as_mut() };
-            let value = tail.pop_back()?;
-            self.len -= 1;
+        let chunk = self.chunks.back_mut()?;
 
-            if tail.is_empty() {
-                if let Some(mut new_tail_ptr) = NonNull::new(tail.link() as *mut Node<T, N>) {
-                    // Update the link in the previous node to exclude the current tail
-                    let new_tail = unsafe { new_tail_ptr.as_mut() };
-                    *new_tail.link_mut() ^= tail_ptr.as_ptr() as usize;
-                    self.tail = Some(new_tail_ptr);
-                } else {
-                    // Empty the list
-                    assert!(self.is_empty());
-                    self.head = None;
-                    self.tail = None;
-                }
-
-                // Deallocate the old tail node
-                drop(unsafe { Box::from_raw(tail_ptr.as_ptr()) });
-            }
-
-            return Some(value);
+        let value = chunk.pop_back();
+        if chunk.is_empty() {
+            self.chunks.pop_back();
         }
 
-        None
+        self.len -= 1;
+        value
     }
 
     /// Removes and returns the element at the specified index, shifting subsequent elements left.
-    ///
-    /// # Arguments
-    /// - `index`: The position of the element to remove.
-    ///
-    /// # Returns
-    /// - The element removed from the list.
-    ///
-    /// # Panics
-    /// - Panics if the `index` is out of bounds.
-    ///
-    /// # Behavior
-    /// - The method traverses the list to locate the node containing the element at the given index.
-    /// - The element is removed from the node, and subsequent elements within the node are shifted to the left.
-    /// - If the node becomes empty after removal, it is removed from the list, and the links between nodes are updated.
-    ///
-    /// # Complexity
-    /// - O(n) to locate the target node.
-    /// - O(N) within the node for shifting elements, where `N` is the node's capacity.
     ///
     /// # Examples
     /// ```
@@ -667,51 +426,35 @@ where
     /// list.push_back(40);
     /// list.push_back(50);
     ///
-    /// assert_eq!(list.remove(1), 20);
+    /// assert_eq!(list.remove(1), Some(20));
     /// assert_eq!(list.get(1), Some(&30));
     /// assert_eq!(list.len(), 4);
     ///
-    /// // Attempting to remove out-of-bounds index will panic
-    /// // list.remove(10);
+    ///
+    /// assert_eq!(list.remove(10), None);
     /// ```
-    pub fn remove(&mut self, index: usize) -> T {
-        if index >= self.len() {
-            panic!("Index out of bounds: cannot remove at index {}", index);
+    pub fn remove(&mut self, index: usize) -> Option<T> {
+        if index >= self.len {
+            return None;
         }
 
-        let (left, middle, right, index) = self.get_closest_mut(index).unwrap();
-        let value = middle.remove(index);
+        if index == 0 {
+            return self.pop_front();
+        }
 
-        if middle.is_empty() {
-            let middle_ptr = unsafe { NonNull::new_unchecked(middle as _) };
-            // remove middle from scope
-            #[allow(unused_variables)]
-            let middle = ();
+        if index >= self.len.saturating_sub(1) {
+            return self.pop_back();
+        }
 
-            // Update links to skip the now-empty node
-            if let Some(mut left_ptr) = left {
-                let left = unsafe { left_ptr.as_mut() };
-                *left.link_mut() ^=
-                    middle_ptr.as_ptr() as usize ^ right.map_or(0, |n| n.as_ptr() as usize);
-            }
+        let SearchTarget {
+            chunk_index,
+            target_index,
+        } = self.search_target(index).unwrap();
 
-            if let Some(mut right_ptr) = right {
-                let right = unsafe { right_ptr.as_mut() };
-                *right.link_mut() ^=
-                    middle_ptr.as_ptr() as usize ^ left.map_or(0, |p| p.as_ptr() as usize);
-            }
-
-            // Update head/tail pointers if necessary
-            if Some(middle_ptr) == self.head {
-                self.head = right;
-            }
-
-            if Some(middle_ptr) == self.tail {
-                self.tail = left;
-            }
-
-            // Deallocate the old node
-            drop(unsafe { Box::from_raw(middle_ptr.as_ptr()) });
+        let chunk = &mut self.chunks[chunk_index];
+        let value = chunk.remove(target_index);
+        if chunk.is_empty() {
+            self.chunks.remove(chunk_index);
         }
 
         self.len -= 1;
@@ -719,12 +462,6 @@ where
     }
 
     /// Removes all elements from the `ArrayList`, effectively making it empty.
-    ///
-    /// This method deallocates all nodes in the list and resets the head, tail, and length
-    /// to their initial states. The method does not shrink the capacity of the list's nodes.
-    ///
-    /// # Complexity
-    /// - Time complexity: O(n), where n is the total number of elements in the list.
     ///
     /// # Example
     /// ```rust
@@ -745,37 +482,11 @@ where
     /// assert_eq!(list.back(), None);
     /// ```
     pub fn clear(&mut self) {
-        let mut right: Option<NonNull<Node<T, N>>> = None;
-        let mut cursor = self.tail;
-
-        while let Some(mut node) = cursor {
-            let tmp = cursor;
-
-            cursor = NonNull::new(
-                (unsafe { node.as_ref().link() } ^ right.map_or(0, |p| p.as_ptr() as usize))
-                    as *mut Node<T, N>,
-            );
-
-            right = tmp;
-
-            drop(unsafe { Box::from_raw(node.as_mut()) })
-        }
-
-        self.tail = None;
-        self.head = None;
+        self.chunks.clear();
         self.len = 0;
     }
 
     /// Returns a reference to the first element of the `ArrayList`, if any.
-    ///
-    /// This method provides read-only access to the first element of the list without removing it.
-    ///
-    /// # Returns
-    /// - `Some(&T)` if the list contains elements, where `&T` is a reference to the first element.
-    /// - `None` if the list is empty.
-    ///
-    /// # Complexity
-    /// - O(1), as it directly accesses the first element in the list.
     ///
     /// # Examples
     /// ```
@@ -794,24 +505,10 @@ where
     /// assert_eq!(list.front(), None);
     /// ```
     pub fn front(&self) -> Option<&T> {
-        if let Some(head_ptr) = self.head {
-            let head = unsafe { head_ptr.as_ref() };
-            return head.front();
-        }
-
-        None
+        self.chunks.front().and_then(|chunk| chunk.front())
     }
 
     /// Returns a mutable reference to the first element of the `ArrayList`, if any.
-    ///
-    /// This method provides mutable access to the first element of the list without removing it.
-    ///
-    /// # Returns
-    /// - `Some(&mut T)` if the list contains elements, where `&mut T` is a mutable reference to the first element.
-    /// - `None` if the list is empty.
-    ///
-    /// # Complexity
-    /// - O(1), as it directly accesses the first element in the list.
     ///
     /// # Examples
     /// ```
@@ -830,24 +527,10 @@ where
     /// assert_eq!(list.front_mut(), None);
     /// ```
     pub fn front_mut(&mut self) -> Option<&mut T> {
-        if let Some(mut head_ptr) = self.head {
-            let head = unsafe { head_ptr.as_mut() };
-            return head.front_mut();
-        }
-
-        None
+        self.chunks.front_mut().and_then(|chunk| chunk.front_mut())
     }
 
     /// Returns a reference to the last element of the `ArrayList`, if any.
-    ///
-    /// This method provides read-only access to the last element of the list without removing it.
-    ///
-    /// # Returns
-    /// - `Some(&T)` if the list contains elements, where `&T` is a reference to the last element.
-    /// - `None` if the list is empty.
-    ///
-    /// # Complexity
-    /// - O(1), as it directly accesses the last element in the list.
     ///
     /// # Examples
     /// ```
@@ -866,24 +549,10 @@ where
     /// assert_eq!(list.back(), None);
     /// ```
     pub fn back(&self) -> Option<&T> {
-        if let Some(tail_ptr) = self.tail {
-            let tail = unsafe { tail_ptr.as_ref() };
-            return tail.back();
-        }
-
-        None
+        self.chunks.back().and_then(|chunk| chunk.back())
     }
 
     /// Returns a mutable reference to the last element of the `ArrayList`, if any.
-    ///
-    /// This method provides mutable access to the last element of the list without removing it.
-    ///
-    /// # Returns
-    /// - `Some(&mut T)` if the list contains elements, where `&mut T` is a mutable reference to the last element.
-    /// - `None` if the list is empty.
-    ///
-    /// # Complexity
-    /// - O(1), as it directly accesses the last element in the list.
     ///
     /// # Examples
     /// ```
@@ -902,25 +571,10 @@ where
     /// assert_eq!(list.back_mut(), None);
     /// ```
     pub fn back_mut(&mut self) -> Option<&mut T> {
-        if let Some(mut tail_ptr) = self.tail {
-            let tail = unsafe { tail_ptr.as_mut() };
-            return tail.back_mut();
-        }
-
-        None
+        self.chunks.back_mut().and_then(|chunk| chunk.back_mut())
     }
 
-    /// Returns a reference to the element at the specified index, if present.
-    ///
-    /// # Arguments
-    /// - `index`: The position of the element in the list.
-    ///
-    /// # Returns
-    /// - `Some(&T)` if the index is valid and the element exists.
-    /// - `None` if the index is out of bounds.
-    ///
-    /// # Complexity
-    /// - O(n), where `n` is the number of nodes in the list, as nodes are traversed sequentially.
+    /// Returns a reference to the element at the specified index, if any.
     ///
     /// # Examples
     /// ```
@@ -934,22 +588,43 @@ where
     /// assert_eq!(list.get(1), Some(&20));
     /// assert_eq!(list.get(2), None); // Out of bounds
     /// ```
-    pub fn get(&self, index: usize) -> Option<&T> {
-        self.get_closest(index)
-            .and_then(|(_, node, _, index)| node.get(index))
+    pub fn get(&self, mut index: usize) -> Option<&T> {
+        if index >= self.len() {
+            return None;
+        }
+
+        if index <= self.len() / 2 {
+            return self
+                .chunks
+                .iter()
+                .find(|chunk| {
+                    if index < chunk.len() {
+                        return true;
+                    }
+
+                    index -= chunk.len();
+                    false
+                })
+                .map(|chunk| &chunk[index]);
+        }
+
+        let mut remaining_len = self.len();
+        self.chunks
+            .iter()
+            .rfind(|chunk| {
+                remaining_len -= chunk.len();
+
+                if index + 1 > remaining_len {
+                    index -= remaining_len;
+                    return true;
+                }
+
+                false
+            })
+            .map(|chunk| &chunk[index])
     }
 
-    /// Returns a mutable reference to the element at the specified index, if present.
-    ///
-    /// # Arguments
-    /// - `index`: The position of the element in the list.
-    ///
-    /// # Returns
-    /// - `Some(&mut T)` if the index is valid and the element exists.
-    /// - `None` if the index is out of bounds.
-    ///
-    /// # Complexity
-    /// - O(n), where `n` is the number of nodes in the list, as nodes are traversed sequentially.
+    /// Returns a mutable reference to the element at the specified index, if any.
     ///
     /// # Examples
     /// ```
@@ -963,15 +638,43 @@ where
     /// assert_eq!(list.get_mut(1), Some(&mut 20));
     /// assert_eq!(list.get_mut(2), None); // Out of bounds
     /// ```
-    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
-        self.get_closest_mut(index)
-            .and_then(|(_, node, _, index)| node.get_mut(index))
+    pub fn get_mut(&mut self, mut index: usize) -> Option<&mut T> {
+        if index >= self.len() {
+            return None;
+        }
+
+        if index <= self.len() / 2 {
+            return self
+                .chunks
+                .iter_mut()
+                .find(|chunk| {
+                    if index < chunk.len() {
+                        return true;
+                    }
+
+                    index -= chunk.len();
+                    false
+                })
+                .map(|chunk| &mut chunk[index]);
+        }
+
+        let mut remaining_len = self.len();
+        self.chunks
+            .iter_mut()
+            .rfind(|chunk| {
+                remaining_len -= chunk.len();
+
+                if index + 1 > remaining_len {
+                    index -= remaining_len;
+                    return true;
+                }
+
+                false
+            })
+            .map(|chunk| &mut chunk[index])
     }
 
     /// Returns the number of elements currently stored in the `ArrayList`.
-    ///
-    /// # Returns
-    /// The total number of elements across all nodes in the `ArrayList`.
     ///
     /// # Example
     /// ```rust
@@ -990,9 +693,6 @@ where
 
     /// Checks if the `ArrayList` is empty.
     ///
-    /// # Returns
-    /// `true` if the `ArrayList` contains no elements, otherwise `false`.
-    ///
     /// # Example
     /// ```rust
     /// use array_list::ArrayList;
@@ -1005,13 +705,12 @@ where
     /// ```
     #[inline]
     pub const fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.len == 0
     }
 
     /// Provides an iterator over list's elements.
     ///
     /// # Examples
-    ///
     /// ```
     /// use array_list::ArrayList;
     ///
@@ -1031,6 +730,28 @@ where
         Iter::from_list(self)
     }
 
+    /// Provides a mutable iterator over list's elements.
+    ///
+    /// # Examples
+    /// ```
+    /// use array_list::ArrayList;
+    ///
+    /// let mut list: ArrayList<_, 2> = ArrayList::new();
+    /// list.push_back(0);
+    /// list.push_back(1);
+    /// list.push_back(2);
+    ///
+    /// let mut iter = list.iter();
+    /// assert_eq!(iter.next(), Some(&0));
+    /// assert_eq!(iter.next(), Some(&1));
+    /// assert_eq!(iter.next(), Some(&2));
+    /// assert_eq!(iter.next(), None);
+    /// ```
+    #[inline]
+    pub fn iter_mut(&mut self) -> IterMut<'_, T, N> {
+        IterMut::from_list(self)
+    }
+
     /// Provides a cursor at the front element.
     ///
     /// The cursor is pointing to the “ghost” non-element if the list is empty.
@@ -1047,195 +768,114 @@ where
         Cursor::from_back(self)
     }
 
+    /// Provides a cursor at the front element.
+    ///
+    /// The cursor is pointing to the “ghost” non-element if the list is empty.
     #[inline]
-    fn get_closest(
-        &self,
-        index: usize,
-    ) -> Option<(
-        Option<NonNull<Node<T, N>>>,
-        &Node<T, N>,
-        Option<NonNull<Node<T, N>>>,
-        usize,
-    )> {
-        if index <= (self.len() >> 1) {
-            self.get_forward(index)
-        } else {
-            self.get_backward(index)
-        }
+    pub fn cursor_front_mut(&mut self) -> CursorMut<'_, T, N> {
+        CursorMut::from_front(self)
     }
 
+    /// Provides a cursor at the back element.
+    ///
+    /// The cursor is pointing to the “ghost” non-element if the list is empty.
     #[inline]
-    fn get_closest_mut(
-        &mut self,
-        index: usize,
-    ) -> Option<(
-        Option<NonNull<Node<T, N>>>,
-        &mut Node<T, N>,
-        Option<NonNull<Node<T, N>>>,
-        usize,
-    )> {
-        if index <= (self.len() >> 1) {
-            self.get_forward_mut(index)
-        } else {
-            self.get_backward_mut(index)
-        }
+    pub fn cursor_back_mut(&mut self) -> CursorMut<'_, T, N> {
+        CursorMut::from_back(self)
     }
 
-    fn get_forward(
-        &self,
-        index: usize,
-    ) -> Option<(
-        Option<NonNull<Node<T, N>>>,
-        &Node<T, N>,
-        Option<NonNull<Node<T, N>>>,
-        usize,
-    )> {
-        if index >= self.len {
+    fn search_target(&mut self, mut index: usize) -> Option<SearchTarget> {
+        if index >= self.len() {
             return None;
         }
 
-        let mut left: Option<NonNull<Node<T, N>>> = None;
-        let mut cursor = self.head?;
-        let mut current_index = 0;
+        if index <= self.len() / 2 {
+            return self
+                .chunks
+                .iter()
+                .position(|chunk| {
+                    if index < chunk.len() {
+                        return true;
+                    }
 
-        loop {
-            let middle = unsafe { cursor.as_ref() };
-            let right = NonNull::new(
-                (middle.link() ^ left.map_or(0, |p| p.as_ptr() as usize)) as *mut Node<T, N>,
-            );
-
-            if current_index + middle.len() > index {
-                let index_inside_node = index - current_index;
-                return Some((left, middle, right, index_inside_node));
-            }
-
-            left = Some(cursor);
-            cursor = right?;
-            current_index += middle.len();
-        }
-    }
-
-    fn get_forward_mut(
-        &mut self,
-        index: usize,
-    ) -> Option<(
-        Option<NonNull<Node<T, N>>>,
-        &mut Node<T, N>,
-        Option<NonNull<Node<T, N>>>,
-        usize,
-    )> {
-        if index >= self.len {
-            return None;
+                    index -= chunk.len();
+                    false
+                })
+                .map(|chunk_index| SearchTarget {
+                    chunk_index,
+                    target_index: index,
+                });
         }
 
-        let mut left: Option<NonNull<Node<T, N>>> = None;
-        let mut cursor = self.head?;
-        let mut current_index = 0;
+        let mut remaining_len = self.len();
+        self.chunks
+            .iter_mut()
+            .rposition(|chunk| {
+                remaining_len -= chunk.len();
 
-        loop {
-            let middle = unsafe { cursor.as_mut() };
-            let right = NonNull::new(
-                (middle.link() ^ left.map_or(0, |p| p.as_ptr() as usize)) as *mut Node<T, N>,
-            );
+                if index + 1 > remaining_len {
+                    index -= remaining_len;
+                    return true;
+                }
 
-            if current_index + middle.len() > index {
-                let index_inside_node = index - current_index;
-                return Some((left, middle, right, index_inside_node));
-            }
-
-            left = Some(cursor);
-            cursor = right?;
-            current_index += middle.len();
-        }
-    }
-
-    fn get_backward(
-        &self,
-        index: usize,
-    ) -> Option<(
-        Option<NonNull<Node<T, N>>>,
-        &Node<T, N>,
-        Option<NonNull<Node<T, N>>>,
-        usize,
-    )> {
-        if index >= self.len {
-            return None;
-        }
-
-        let mut right: Option<NonNull<Node<T, N>>> = None;
-        let mut cursor = self.tail?;
-        let mut current_index = self.len;
-
-        loop {
-            let middle = unsafe { cursor.as_ref() };
-            let left = NonNull::new(
-                (middle.link() ^ right.map_or(0, |p| p.as_ptr() as usize)) as *mut Node<T, N>,
-            );
-
-            current_index -= middle.len();
-
-            if index >= current_index {
-                let index_inside_node = index - current_index;
-                return Some((left, middle, right, index_inside_node));
-            }
-
-            right = Some(cursor);
-            cursor = left?;
-        }
-    }
-
-    fn get_backward_mut(
-        &mut self,
-        index: usize,
-    ) -> Option<(
-        Option<NonNull<Node<T, N>>>,
-        &mut Node<T, N>,
-        Option<NonNull<Node<T, N>>>,
-        usize,
-    )> {
-        if index >= self.len {
-            return None;
-        }
-
-        let mut right: Option<NonNull<Node<T, N>>> = None;
-        let mut cursor = self.tail?;
-        let mut current_index = self.len;
-
-        loop {
-            let middle = unsafe { cursor.as_mut() };
-            current_index -= middle.len();
-
-            let left = NonNull::new(
-                (middle.link() ^ right.map_or(0, |p| p.as_ptr() as usize)) as *mut Node<T, N>,
-            );
-
-            if index >= current_index {
-                let index_inside_node = index - current_index;
-                return Some((left, middle, right, index_inside_node));
-            }
-
-            right = Some(cursor);
-            cursor = left?;
-        }
+                false
+            })
+            .map(|chunk_index| SearchTarget {
+                chunk_index,
+                target_index: index,
+            })
     }
 }
 
-impl<T, const N: usize> Clone for ArrayList<T, N>
+#[derive(Debug, Default)]
+struct SearchTarget {
+    chunk_index: usize,
+    target_index: usize,
+}
+
+impl<T: Clone, const N: usize> Clone for ArrayList<T, N>
 where
-    T: Clone,
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
     fn clone(&self) -> Self {
         self.iter().cloned().collect()
     }
 }
 
+impl<T, const N: usize, const M: usize> PartialEq<[T; M]> for ArrayList<T, N>
+where
+    T: PartialEq,
+    Usize<N>: ChunkCapacity,
+{
+    fn eq(&self, other: &[T; M]) -> bool {
+        self.len() == other.len() && self.iter().eq(other)
+    }
+}
+
+impl<T, const N: usize> PartialEq<&[T]> for ArrayList<T, N>
+where
+    T: PartialEq,
+    Usize<N>: ChunkCapacity,
+{
+    fn eq(&self, other: &&[T]) -> bool {
+        self.len() == other.len() && self.iter().eq(other.iter())
+    }
+}
+
+impl<T, const N: usize> PartialEq<[T]> for ArrayList<T, N>
+where
+    T: PartialEq,
+    Usize<N>: ChunkCapacity,
+{
+    fn eq(&self, other: &[T]) -> bool {
+        self.len() == other.len() && self.iter().eq(other)
+    }
+}
+
 impl<T, const N: usize> PartialEq for ArrayList<T, N>
 where
     T: PartialEq,
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
     fn eq(&self, other: &Self) -> bool {
         self.len() == other.len() && self.iter().eq(other)
@@ -1245,16 +885,14 @@ where
 impl<T, const N: usize> Eq for ArrayList<T, N>
 where
     T: Eq,
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
 }
 
 impl<T, const N: usize> PartialOrd for ArrayList<T, N>
 where
     T: PartialOrd,
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.iter().partial_cmp(other)
@@ -1264,8 +902,7 @@ where
 impl<T, const N: usize> Ord for ArrayList<T, N>
 where
     T: Ord,
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
@@ -1276,92 +913,92 @@ where
 impl<T, const N: usize> Hash for ArrayList<T, N>
 where
     T: Hash,
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(self.len());
-        self.iter().for_each(|e| e.hash(state));
+        self.iter().for_each(|v| v.hash(state));
     }
 }
 
-impl<T, const N: usize> core::fmt::Debug for ArrayList<T, N>
+impl<T, const N: usize> std::fmt::Debug for ArrayList<T, N>
 where
-    T: core::fmt::Debug,
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    T: std::fmt::Debug,
+    Usize<N>: ChunkCapacity,
 {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_list().entries(self).finish()
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.chunks.iter()).finish()
+    }
+}
+
+impl<T, const N: usize> IntoIterator for ArrayList<T, N>
+where
+    Usize<N>: ChunkCapacity,
+{
+    type Item = T;
+    type IntoIter = IntoIter<T, N>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter::from_list(self)
     }
 }
 
 impl<'a, T, const N: usize> IntoIterator for &'a ArrayList<T, N>
 where
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
     type Item = &'a T;
     type IntoIter = Iter<'a, T, N>;
 
-    fn into_iter(self) -> Iter<'a, T, N> {
-        self.iter()
+    fn into_iter(self) -> Self::IntoIter {
+        Iter::from_list(self)
     }
 }
 
-impl<T, const N: usize> Drop for ArrayList<T, N>
+impl<'a, T, const N: usize> IntoIterator for &'a mut ArrayList<T, N>
 where
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
+    Usize<N>: ChunkCapacity,
 {
-    fn drop(&mut self) {
-        self.clear();
+    type Item = &'a mut T;
+    type IntoIter = IterMut<'a, T, N>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IterMut::from_list(self)
     }
-}
-
-unsafe impl<T, const N: usize> Send for ArrayList<T, N>
-where
-    T: Send,
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
-{
-}
-
-unsafe impl<T, const N: usize> Sync for ArrayList<T, N>
-where
-    T: Sync,
-    [T; N]: Array,
-    Usize<N>: NonZero + ConstCast<u16>,
-{
 }
 
 #[cfg(test)]
 mod tests {
-    use core::cmp::Ordering;
-    use core::mem::size_of;
-
+    use std::cmp::Ordering;
+    use std::collections::VecDeque;
     use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+    use std::mem::size_of;
 
-    use crate::ArrayList;
+    use quickcheck_macros::quickcheck;
 
-    const _: () = assert!(size_of::<ArrayList<usize, 14>>() == size_of::<usize>() * 3);
+    use crate::{ArrayList, ChunkCapacity, Usize};
+
+    const _: () = assert!(
+        size_of::<ArrayList<usize, 32>>() == size_of::<usize>() * 5,
+        "unexpected memory layout"
+    );
 
     #[test]
-    fn new_creates_empty_array_list() {
+    fn test_new_creates_empty_array_list() {
         let sut: ArrayList<i64, 2> = ArrayList::new();
         assert!(sut.is_empty());
         assert_eq!(sut.len(), 0);
     }
 
     #[test]
-    fn default_creates_empty_array_list() {
+    fn test_default_creates_empty_array_list() {
         let sut: ArrayList<i64, 2> = ArrayList::default();
         assert!(sut.is_empty());
         assert_eq!(sut.len(), 0);
     }
 
     #[test]
-    fn push_front_adds_element_to_front() {
+    fn test_push_front_adds_element_to_front() {
         let mut sut: ArrayList<i64, 2> = ArrayList::new();
         assert_eq!(sut.len(), 0);
         assert!(sut.is_empty());
@@ -1390,7 +1027,7 @@ mod tests {
     }
 
     #[test]
-    fn push_back_adds_element_to_back() {
+    fn test_push_back_adds_element_to_back() {
         let mut sut: ArrayList<i64, 2> = ArrayList::new();
         assert_eq!(sut.len(), 0);
         assert!(sut.is_empty());
@@ -1419,378 +1056,57 @@ mod tests {
     }
 
     #[test]
-    fn insert_uses_spare_space_in_left_node() {
-        let mut sut: ArrayList<i64, 3> = ArrayList::new();
-        sut.push_back(0);
-        sut.push_back(1);
-        sut.push_back(2);
-        sut.push_back(3);
-        sut.push_back(4);
-        sut.push_back(5);
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&2));
-        assert_eq!(sut.get(3), Some(&3));
-        assert_eq!(sut.get(4), Some(&4));
-        assert_eq!(sut.get(5), Some(&5));
-        assert_eq!(6, sut.len());
-
-        assert_eq!(sut.remove(2), 2);
-        assert_eq!(5, sut.len());
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&3));
-        assert_eq!(sut.get(3), Some(&4));
-        assert_eq!(sut.get(4), Some(&5));
-
-        sut.insert(3, 42);
-        assert_eq!(6, sut.len());
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&3));
-        assert_eq!(sut.get(3), Some(&42));
-        assert_eq!(sut.get(4), Some(&4));
-        assert_eq!(sut.get(5), Some(&5));
-
-        assert_eq!(sut.remove(2), 3);
-        assert_eq!(5, sut.len());
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&42));
-        assert_eq!(sut.get(3), Some(&4));
-        assert_eq!(sut.get(4), Some(&5));
-
-        sut.insert(2, 2);
-        assert_eq!(6, sut.len());
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&2));
-        assert_eq!(sut.get(3), Some(&42));
-        assert_eq!(sut.get(4), Some(&4));
-        assert_eq!(sut.get(5), Some(&5));
-    }
-
-    #[test]
-    fn insert_create_new_node_if_necessary() {
-        let mut sut: ArrayList<i64, 3> = ArrayList::new();
-        sut.push_back(0);
-        sut.push_back(1);
-        sut.push_back(2);
-        sut.push_back(3);
-        sut.push_back(4);
-        sut.push_back(5);
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&2));
-        assert_eq!(sut.get(3), Some(&3));
-        assert_eq!(sut.get(4), Some(&4));
-        assert_eq!(sut.get(5), Some(&5));
-        assert_eq!(6, sut.len());
-
-        sut.insert(3, 42);
-        assert_eq!(7, sut.len());
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&2));
-        assert_eq!(sut.get(3), Some(&42));
-        assert_eq!(sut.get(4), Some(&3));
-        assert_eq!(sut.get(5), Some(&4));
-        assert_eq!(sut.get(6), Some(&5));
-
-        sut.insert(4, 21);
-        assert_eq!(8, sut.len());
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&2));
-        assert_eq!(sut.get(3), Some(&42));
-        assert_eq!(sut.get(4), Some(&21));
-        assert_eq!(sut.get(5), Some(&3));
-        assert_eq!(sut.get(6), Some(&4));
-        assert_eq!(sut.get(7), Some(&5));
-
-        sut.insert(4, 18);
-        assert_eq!(9, sut.len());
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&2));
-        assert_eq!(sut.get(3), Some(&42));
-        assert_eq!(sut.get(4), Some(&18));
-        assert_eq!(sut.get(5), Some(&21));
-        assert_eq!(sut.get(6), Some(&3));
-        assert_eq!(sut.get(7), Some(&4));
-        assert_eq!(sut.get(8), Some(&5));
-
-        sut.insert(4, 12);
-        assert_eq!(10, sut.len());
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&2));
-        assert_eq!(sut.get(3), Some(&42));
-        assert_eq!(sut.get(4), Some(&12));
-        assert_eq!(sut.get(5), Some(&18));
-        assert_eq!(sut.get(6), Some(&21));
-        assert_eq!(sut.get(7), Some(&3));
-        assert_eq!(sut.get(8), Some(&4));
-        assert_eq!(sut.get(9), Some(&5));
-
-        sut.insert(2, 33);
-        assert_eq!(11, sut.len());
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&33));
-        assert_eq!(sut.get(3), Some(&2));
-        assert_eq!(sut.get(4), Some(&42));
-        assert_eq!(sut.get(5), Some(&12));
-        assert_eq!(sut.get(6), Some(&18));
-        assert_eq!(sut.get(7), Some(&21));
-        assert_eq!(sut.get(8), Some(&3));
-        assert_eq!(sut.get(9), Some(&4));
-        assert_eq!(sut.get(10), Some(&5));
-    }
-
-    #[test]
-    fn insert_work_with_node_of_capacity_1() {
-        let mut sut: ArrayList<i64, 1> = ArrayList::new();
-        assert!(sut.is_empty());
-        assert_eq!(sut.len(), 0);
-
-        sut.insert(0, 1);
-        assert_eq!(sut.len(), 1);
-        assert_eq!(sut.get(0), Some(&1));
-
-        sut.insert(0, 0);
-        assert_eq!(sut.len(), 2);
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-
-        sut.insert(2, 3);
-        assert_eq!(sut.len(), 3);
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&3));
-
-        sut.insert(2, 2);
-        assert_eq!(sut.len(), 4);
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&2));
-        assert_eq!(sut.get(3), Some(&3));
-
-        sut.insert(0, -2);
-        assert_eq!(sut.len(), 5);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&0));
-        assert_eq!(sut.get(2), Some(&1));
-        assert_eq!(sut.get(3), Some(&2));
-        assert_eq!(sut.get(4), Some(&3));
-
-        sut.insert(1, -1);
-        assert_eq!(sut.len(), 6);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&-1));
-        assert_eq!(sut.get(2), Some(&0));
-        assert_eq!(sut.get(3), Some(&1));
-        assert_eq!(sut.get(4), Some(&2));
-        assert_eq!(sut.get(5), Some(&3));
-
-        sut.insert(6, 5);
-        assert_eq!(sut.len(), 7);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&-1));
-        assert_eq!(sut.get(2), Some(&0));
-        assert_eq!(sut.get(3), Some(&1));
-        assert_eq!(sut.get(4), Some(&2));
-        assert_eq!(sut.get(5), Some(&3));
-        assert_eq!(sut.get(6), Some(&5));
-
-        sut.insert(6, 4);
-        assert_eq!(sut.len(), 8);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&-1));
-        assert_eq!(sut.get(2), Some(&0));
-        assert_eq!(sut.get(3), Some(&1));
-        assert_eq!(sut.get(4), Some(&2));
-        assert_eq!(sut.get(5), Some(&3));
-        assert_eq!(sut.get(6), Some(&4));
-        assert_eq!(sut.get(7), Some(&5));
-    }
-
-    #[test]
-    fn insert_work_with_node_of_capacity_2() {
-        let mut sut: ArrayList<i64, 2> = ArrayList::new();
-        assert!(sut.is_empty());
-        assert_eq!(sut.len(), 0);
-
-        sut.insert(0, 1);
-        assert_eq!(sut.len(), 1);
-        assert_eq!(sut.get(0), Some(&1));
-
-        sut.insert(0, 0);
-        assert_eq!(sut.len(), 2);
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-
-        sut.insert(2, 3);
-        assert_eq!(sut.len(), 3);
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&3));
-
-        sut.insert(2, 2);
-        assert_eq!(sut.len(), 4);
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&2));
-        assert_eq!(sut.get(3), Some(&3));
-
-        sut.insert(0, -2);
-        assert_eq!(sut.len(), 5);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&0));
-        assert_eq!(sut.get(2), Some(&1));
-        assert_eq!(sut.get(3), Some(&2));
-        assert_eq!(sut.get(4), Some(&3));
-
-        sut.insert(1, -1);
-        assert_eq!(sut.len(), 6);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&-1));
-        assert_eq!(sut.get(2), Some(&0));
-        assert_eq!(sut.get(3), Some(&1));
-        assert_eq!(sut.get(4), Some(&2));
-        assert_eq!(sut.get(5), Some(&3));
-
-        sut.insert(6, 5);
-        assert_eq!(sut.len(), 7);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&-1));
-        assert_eq!(sut.get(2), Some(&0));
-        assert_eq!(sut.get(3), Some(&1));
-        assert_eq!(sut.get(4), Some(&2));
-        assert_eq!(sut.get(5), Some(&3));
-        assert_eq!(sut.get(6), Some(&5));
-
-        sut.insert(6, 4);
-        assert_eq!(sut.len(), 8);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&-1));
-        assert_eq!(sut.get(2), Some(&0));
-        assert_eq!(sut.get(3), Some(&1));
-        assert_eq!(sut.get(4), Some(&2));
-        assert_eq!(sut.get(5), Some(&3));
-        assert_eq!(sut.get(6), Some(&4));
-        assert_eq!(sut.get(7), Some(&5));
-    }
-
-    #[test]
-    fn insert_work_with_node_of_capacity_3() {
-        let mut sut: ArrayList<i64, 3> = ArrayList::new();
-        assert!(sut.is_empty());
-        assert_eq!(sut.len(), 0);
-
-        sut.insert(0, 1);
-        assert_eq!(sut.len(), 1);
-        assert_eq!(sut.get(0), Some(&1));
-
-        sut.insert(0, 0);
-        assert_eq!(sut.len(), 2);
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-
-        sut.insert(2, 3);
-        assert_eq!(sut.len(), 3);
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&3));
-
-        sut.insert(2, 2);
-        assert_eq!(sut.len(), 4);
-        assert_eq!(sut.get(0), Some(&0));
-        assert_eq!(sut.get(1), Some(&1));
-        assert_eq!(sut.get(2), Some(&2));
-        assert_eq!(sut.get(3), Some(&3));
-
-        sut.insert(0, -2);
-        assert_eq!(sut.len(), 5);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&0));
-        assert_eq!(sut.get(2), Some(&1));
-        assert_eq!(sut.get(3), Some(&2));
-        assert_eq!(sut.get(4), Some(&3));
-
-        sut.insert(1, -1);
-        assert_eq!(sut.len(), 6);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&-1));
-        assert_eq!(sut.get(2), Some(&0));
-        assert_eq!(sut.get(3), Some(&1));
-        assert_eq!(sut.get(4), Some(&2));
-        assert_eq!(sut.get(5), Some(&3));
-
-        sut.insert(6, 5);
-        assert_eq!(sut.len(), 7);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&-1));
-        assert_eq!(sut.get(2), Some(&0));
-        assert_eq!(sut.get(3), Some(&1));
-        assert_eq!(sut.get(4), Some(&2));
-        assert_eq!(sut.get(5), Some(&3));
-        assert_eq!(sut.get(6), Some(&5));
-
-        sut.insert(6, 4);
-        assert_eq!(sut.len(), 8);
-        assert_eq!(sut.get(0), Some(&-2));
-        assert_eq!(sut.get(1), Some(&-1));
-        assert_eq!(sut.get(2), Some(&0));
-        assert_eq!(sut.get(3), Some(&1));
-        assert_eq!(sut.get(4), Some(&2));
-        assert_eq!(sut.get(5), Some(&3));
-        assert_eq!(sut.get(6), Some(&4));
-        assert_eq!(sut.get(7), Some(&5));
-    }
-
-    #[test]
-    fn insert_inserts_element_at_correct_index() {
+    fn test_insert_inserts_element_at_correct_index() {
         let mut sut: ArrayList<i64, 4> = ArrayList::new();
 
         // Insert into an empty list
         sut.insert(0, 10); // List: [10]
         assert_eq!(sut.len(), 1);
+        assert_eq!(sut, [10]);
         assert_eq!(sut.get(0), Some(&10));
 
         // Insert at the beginning
         sut.insert(0, 5); // List: [5, 10]
         assert_eq!(sut.len(), 2);
+        assert_eq!(sut, [5, 10]);
         assert_eq!(sut.get(0), Some(&5));
         assert_eq!(sut.get(1), Some(&10));
 
         // Insert at the end
         sut.insert(2, 20); // List: [5, 10, 20]
         assert_eq!(sut.len(), 3);
+        assert_eq!(sut, [5, 10, 20]);
         assert_eq!(sut.get(2), Some(&20));
 
         // Insert in the middle
         sut.insert(1, 7); // List: [5, 7, 10, 20]
         assert_eq!(sut.len(), 4);
+        assert_eq!(sut, [5, 7, 10, 20]);
         assert_eq!(sut.get(1), Some(&7));
         assert_eq!(sut.get(2), Some(&10));
 
-        // Fill the node
+        // Fill the chunk
         sut.insert(4, 25); // List: [5, 7, 10, 20, 25]
+        assert_eq!(sut.len(), 5);
+        assert_eq!(sut, [5, 7, 10, 20, 25]);
+        assert_eq!(sut.get(4), Some(&25));
+
         sut.insert(5, 30); // List: [5, 7, 10, 20, 25, 30]
         assert_eq!(sut.len(), 6);
-        assert_eq!(sut.get(4), Some(&25));
+        assert_eq!(sut, [5, 7, 10, 20, 25, 30]);
         assert_eq!(sut.get(5), Some(&30));
 
-        // Force a node split
+        // Force a chunk split
         sut.insert(3, 15); // List: [5, 7, 10, 15, 20, 25, 30]
         assert_eq!(sut.len(), 7);
+        assert_eq!(sut, [5, 7, 10, 15, 20, 25, 30]);
         assert_eq!(sut.get(3), Some(&15));
         assert_eq!(sut.get(4), Some(&20));
 
-        // Insert at the new node boundary
+        // Insert at the new chunk boundary
         sut.insert(6, 27); // List: [5, 7, 10, 15, 20, 25, 27, 30]
         assert_eq!(sut.len(), 8);
+        assert_eq!(sut, [5, 7, 10, 15, 20, 25, 27, 30]);
         assert_eq!(sut.get(6), Some(&27));
         assert_eq!(sut.get(7), Some(&30));
 
@@ -1810,7 +1126,7 @@ mod tests {
     }
 
     #[test]
-    fn pop_front_removes_and_returns_the_first_element() {
+    fn test_pop_front_removes_and_returns_the_first_element() {
         let mut sut: ArrayList<i64, 2> = ArrayList::new();
         sut.push_front(30);
         sut.push_front(20);
@@ -1829,7 +1145,7 @@ mod tests {
     }
 
     #[test]
-    fn pop_back_removes_and_returns_the_last_element() {
+    fn test_pop_back_removes_and_returns_the_last_element() {
         let mut sut: ArrayList<i64, 2> = ArrayList::new();
         sut.push_back(10);
         sut.push_back(20);
@@ -1848,7 +1164,7 @@ mod tests {
     }
 
     #[test]
-    fn remove_removes_element_at_index() {
+    fn test_remove_removes_element_at_index() {
         let mut sut: ArrayList<i64, 3> = ArrayList::new();
 
         // Fill the list with elements
@@ -1861,38 +1177,36 @@ mod tests {
         assert_eq!(sut.len(), 6);
 
         // Test removal of elements at various indices
-        assert_eq!(sut.remove(0), 10); // Removes 10, shifts 20 to index 0
+        assert_eq!(sut.remove(0).unwrap(), 10); // Removes 10, shifts 20 to index 0
         assert_eq!(sut.get(0), Some(&20));
         assert_eq!(sut.len(), 5);
 
-        assert_eq!(sut.remove(2), 40); // Removes 40, shifts 50 to index 2
+        assert_eq!(sut.remove(2).unwrap(), 40); // Removes 40, shifts 50 to index 2
         assert_eq!(sut.get(2), Some(&50));
         assert_eq!(sut.len(), 4);
 
-        assert_eq!(sut.remove(3), 60); // Removes 60, second node becomes empty
+        assert_eq!(sut.remove(3).unwrap(), 60); // Removes 60, second chunk becomes empty
         assert_eq!(sut.get(3), None); // No more elements at index 3
         assert_eq!(sut.len(), 3);
 
         // Test removal of remaining elements
-        assert_eq!(sut.remove(1), 30); // Removes 30
+        assert_eq!(sut.remove(1).unwrap(), 30); // Removes 30
         assert_eq!(sut.get(1), Some(&50));
         assert_eq!(sut.len(), 2);
 
-        assert_eq!(sut.remove(1), 50); // Removes 50
+        assert_eq!(sut.remove(1).unwrap(), 50); // Removes 50
         assert_eq!(sut.get(1), None);
         assert_eq!(sut.len(), 1);
 
-        assert_eq!(sut.remove(0), 20); // Removes 20, list becomes empty
+        assert_eq!(sut.remove(0).unwrap(), 20); // Removes 20, list becomes empty
         assert_eq!(sut.get(0), None);
         assert_eq!(sut.len(), 0);
 
-        // Test out-of-bounds index (should panic)
-        let result = std::panic::catch_unwind(move || sut.remove(0));
-        assert!(result.is_err());
+        assert_eq!(sut.remove(0), None);
     }
 
     #[test]
-    fn remove_element_in_middle_node() {
+    fn test_remove_element_in_middle_chunk() {
         let mut sut: ArrayList<i64, 3> = ArrayList::new();
         assert!(sut.is_empty());
         assert_eq!(sut.len(), 0);
@@ -1918,7 +1232,7 @@ mod tests {
         assert_eq!(sut.get(7), Some(&7));
         assert_eq!(sut.get(8), Some(&8));
 
-        assert_eq!(sut.remove(5), 5);
+        assert_eq!(sut.remove(5).unwrap(), 5);
         assert!(!sut.is_empty());
         assert_eq!(sut.len(), 8);
         assert_eq!(sut.get(0), Some(&0));
@@ -1930,7 +1244,7 @@ mod tests {
         assert_eq!(sut.get(6), Some(&7));
         assert_eq!(sut.get(7), Some(&8));
 
-        assert_eq!(sut.remove(4), 4);
+        assert_eq!(sut.remove(4).unwrap(), 4);
         assert!(!sut.is_empty());
         assert_eq!(sut.len(), 7);
         assert_eq!(sut.get(0), Some(&0));
@@ -1941,7 +1255,7 @@ mod tests {
         assert_eq!(sut.get(5), Some(&7));
         assert_eq!(sut.get(6), Some(&8));
 
-        assert_eq!(sut.remove(3), 3);
+        assert_eq!(sut.remove(3).unwrap(), 3);
         assert!(!sut.is_empty());
         assert_eq!(sut.len(), 6);
         assert_eq!(sut.get(0), Some(&0));
@@ -1953,7 +1267,7 @@ mod tests {
     }
 
     #[test]
-    fn clear_resets_the_list() {
+    fn test_clear_resets_the_list() {
         let mut sut: ArrayList<i32, 2> = ArrayList::new();
 
         sut.push_back(10);
@@ -1979,7 +1293,7 @@ mod tests {
     }
 
     #[test]
-    fn front_returns_the_first_element() {
+    fn test_front_returns_the_first_element() {
         let mut sut: ArrayList<i64, 2> = ArrayList::new();
         assert_eq!(sut.front(), None);
 
@@ -2003,7 +1317,7 @@ mod tests {
     }
 
     #[test]
-    fn front_mut_returns_the_first_element() {
+    fn test_front_mut_returns_the_first_element() {
         let mut sut: ArrayList<i64, 2> = ArrayList::new();
         assert_eq!(sut.front_mut(), None);
 
@@ -2027,7 +1341,7 @@ mod tests {
     }
 
     #[test]
-    fn back_returns_the_last_element() {
+    fn test_back_returns_the_last_element() {
         let mut sut: ArrayList<i64, 2> = ArrayList::new();
         assert_eq!(sut.back(), None);
 
@@ -2051,7 +1365,7 @@ mod tests {
     }
 
     #[test]
-    fn back_mut_returns_the_last_element() {
+    fn test_back_mut_returns_the_last_element() {
         let mut sut: ArrayList<i64, 2> = ArrayList::new();
         assert_eq!(sut.back_mut(), None);
 
@@ -2075,14 +1389,14 @@ mod tests {
     }
 
     #[test]
-    fn get_retrieves_correct_element() {
+    fn test_get_retrieves_correct_element() {
         let mut sut: ArrayList<i64, 3> = ArrayList::new();
         assert!(sut.is_empty());
 
         assert_eq!(sut.get(0), None);
         assert_eq!(sut.get(5), None);
 
-        // Ensure to allocate at leat 2 nodes
+        // Ensure to allocate at leat 2 chunks
         sut.push_back(10);
         sut.push_back(20);
         sut.push_back(30);
@@ -2103,14 +1417,14 @@ mod tests {
     }
 
     #[test]
-    fn get_mut_retrieves_correct_element() {
+    fn test_get_mut_retrieves_correct_element() {
         let mut sut: ArrayList<i64, 3> = ArrayList::new();
         assert!(sut.is_empty());
 
         assert_eq!(sut.get_mut(0), None);
         assert_eq!(sut.get_mut(5), None);
 
-        // Ensure to allocate at leat 2 nodes
+        // Ensure to allocate at leat 2 chunks
         sut.push_back(10);
         sut.push_back(20);
         sut.push_back(30);
@@ -2131,7 +1445,7 @@ mod tests {
     }
 
     #[test]
-    fn len_returns_correct_length() {
+    fn test_len_returns_correct_length() {
         let mut sut: ArrayList<i64, 2> = ArrayList::new();
         assert_eq!(sut.len(), 0);
         assert!(sut.is_empty());
@@ -2150,7 +1464,7 @@ mod tests {
     }
 
     #[test]
-    fn list_remains_functional_after_multiple_operations() {
+    fn test_list_remains_functional_after_multiple_operations() {
         let mut sut: ArrayList<i32, 4> = ArrayList::new();
 
         // Initial insertions
@@ -2194,7 +1508,7 @@ mod tests {
         assert_eq!(sut.get(3), Some(&30));
 
         // Remove an element from the middle
-        assert_eq!(sut.remove(2), 5);
+        assert_eq!(sut.remove(2).unwrap(), 5);
         assert_eq!(sut.len(), 3);
         assert_eq!(sut.get(0), Some(&0));
         assert_eq!(sut.get(1), Some(&15));
@@ -2213,7 +1527,7 @@ mod tests {
     }
 
     #[test]
-    fn append_combines_two_lists() {
+    fn test_append_combines_two_lists() {
         // Create and populate the first list
         let mut sut: ArrayList<i32, 2> = ArrayList::new();
         sut.push_back(10);
@@ -2270,7 +1584,7 @@ mod tests {
     }
 
     #[test]
-    fn append_an_empty_list_do_nothing() {
+    fn test_append_an_empty_list_do_nothing() {
         // Create and populate the first list
         let mut sut: ArrayList<i32, 2> = ArrayList::new();
         sut.push_back(10);
@@ -2304,7 +1618,7 @@ mod tests {
     }
 
     #[test]
-    fn append_on_an_empty_list_adds_all_elements() {
+    fn test_append_on_an_empty_list_adds_all_elements() {
         // Create and populate the first list
         let mut sut: ArrayList<i32, 2> = ArrayList::new();
 
@@ -2338,7 +1652,7 @@ mod tests {
     }
 
     #[test]
-    fn from_iter_works_correctly() {
+    fn test_from_iter_works_correctly() {
         let sut: ArrayList<i32, 2> = ArrayList::from_iter(0..5);
         assert!(!sut.is_empty());
         assert_eq!(sut.len(), 5);
@@ -2353,7 +1667,7 @@ mod tests {
     }
 
     #[test]
-    fn extend_works_correctly() {
+    fn test_extend_works_correctly() {
         let mut sut: ArrayList<i32, 2> = ArrayList::new();
         sut.extend(0..5);
         assert!(!sut.is_empty());
@@ -2369,7 +1683,7 @@ mod tests {
     }
 
     #[test]
-    fn extend_with_refs_works_correctly() {
+    fn test_extend_with_refs_works_correctly() {
         let mut sut: ArrayList<i32, 2> = ArrayList::new();
         sut.extend([0, 1, 2, 3, 4].iter());
         assert!(!sut.is_empty());
@@ -2385,7 +1699,7 @@ mod tests {
     }
 
     #[test]
-    fn from_array_works_correctly() {
+    fn test_from_array_works_correctly() {
         let sut: ArrayList<i32, 2> = ArrayList::from([0, 1, 2, 3, 4]);
         assert!(!sut.is_empty());
         assert_eq!(sut.len(), 5);
@@ -2400,7 +1714,7 @@ mod tests {
     }
 
     #[test]
-    fn clone_works_correctly() {
+    fn test_clone_works_correctly() {
         let mut other: ArrayList<i32, 2> = ArrayList::from([0, 1, 2, 3, 4]);
 
         let sut = other.clone();
@@ -2424,7 +1738,7 @@ mod tests {
     }
 
     #[test]
-    fn eq_works_correctly() {
+    fn test_eq_works_correctly() {
         let l = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
         let mut r = ArrayList::<usize, 2>::from([0, 2, 3, 4, 1]);
 
@@ -2440,14 +1754,14 @@ mod tests {
     }
 
     #[test]
-    fn debug_works_correctly() {
+    fn test_debug_works_correctly() {
         let array = [0, 1, 2, 3, 4];
         let list = ArrayList::<usize, 2>::from(array);
-        assert_eq!(format!("{list:?}"), format!("{:?}", array));
+        assert_eq!(format!("{list:?}"), "[[0, 1], [2, 3], [4]]");
     }
 
     #[test]
-    fn cmp_works_correctly() {
+    fn test_cmp_works_correctly() {
         let a = ArrayList::<usize, 2>::from([0, 1, 2]);
         let b = ArrayList::<usize, 2>::from([4, 5, 6]);
         assert_eq!(a.cmp(&a), Ordering::Equal);
@@ -2456,7 +1770,7 @@ mod tests {
     }
 
     #[test]
-    fn partial_cmp_works_correctly() {
+    fn test_partial_cmp_works_correctly() {
         let a = ArrayList::<f64, 2>::from([0.0, 1.0, 2.0]);
         let b = ArrayList::<f64, 2>::from([4.0, 5.0, 6.0]);
         assert_eq!(a.partial_cmp(&a), Some(Ordering::Equal));
@@ -2465,12 +1779,412 @@ mod tests {
     }
 
     #[test]
-    fn hash_works_correctly() {
+    fn test_hash_works_correctly() {
         let bh = BuildHasherDefault::<DefaultHasher>::default();
         let a = ArrayList::<usize, 2>::from([0, 1, 2]);
         let b = ArrayList::<usize, 2>::from([4, 5, 6]);
         assert_ne!(bh.hash_one(&a), bh.hash_one(&b));
         assert_eq!(bh.hash_one(&a), bh.hash_one(&a));
         assert_eq!(bh.hash_one(&a), bh.hash_one(&(a.clone())));
+    }
+
+    #[test]
+    fn test_push_front() {
+        let mut sut: ArrayList<_, 3> = ArrayList::new();
+
+        sut.push_front(6);
+        assert_eq!(sut, [6]);
+
+        sut.push_front(5);
+        assert_eq!(sut, [5, 6]);
+
+        sut.push_front(4);
+        assert_eq!(sut, [4, 5, 6]);
+
+        sut.push_front(3);
+        assert_eq!(sut, [3, 4, 5, 6]);
+
+        sut.push_front(2);
+        assert_eq!(sut, [2, 3, 4, 5, 6]);
+
+        sut.push_front(1);
+        assert_eq!(sut, [1, 2, 3, 4, 5, 6]);
+
+        sut.push_front(0);
+        assert_eq!(sut, [0, 1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn test_push_back() {
+        let mut sut: ArrayList<_, 3> = ArrayList::new();
+
+        sut.push_back(6);
+        assert_eq!(sut, [6]);
+
+        sut.push_back(5);
+        assert_eq!(sut, [6, 5]);
+
+        sut.push_back(4);
+        assert_eq!(sut, [6, 5, 4]);
+
+        sut.push_back(3);
+        assert_eq!(sut, [6, 5, 4, 3]);
+
+        sut.push_back(2);
+        assert_eq!(sut, [6, 5, 4, 3, 2]);
+
+        sut.push_back(1);
+        assert_eq!(sut, [6, 5, 4, 3, 2, 1]);
+
+        sut.push_back(0);
+        assert_eq!(sut, [6, 5, 4, 3, 2, 1, 0]);
+    }
+
+    #[test]
+    fn test_insert() {
+        let mut sut: ArrayList<_, 3> = ArrayList::new();
+        sut.insert(0, 4);
+        assert_eq!(sut, [4]);
+
+        sut.insert(0, 3);
+        assert_eq!(sut, [3, 4]);
+
+        sut.insert(2, 5);
+        assert_eq!(sut, [3, 4, 5]);
+
+        sut.insert(3, 6);
+        assert_eq!(sut, [3, 4, 5, 6]);
+
+        sut.insert(4, 7);
+        assert_eq!(sut, [3, 4, 5, 6, 7]);
+
+        sut.insert(5, 8);
+        assert_eq!(sut, [3, 4, 5, 6, 7, 8]);
+
+        sut.insert(0, 1);
+        assert_eq!(sut, [1, 3, 4, 5, 6, 7, 8]);
+
+        sut.insert(0, 0);
+        assert_eq!(sut, [0, 1, 3, 4, 5, 6, 7, 8]);
+
+        sut.insert(2, 2);
+        assert_eq!(sut, [0, 1, 2, 3, 4, 5, 6, 7, 8],);
+
+        sut.insert(2, 42);
+        assert_eq!(sut, [0, 1, 42, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn test_insert_into_full_array_at_every_index() {
+        for i in 0..4 {
+            let mut sut: ArrayList<_, 4> = ArrayList::new();
+            sut.extend(0..4);
+            assert_eq!(sut.len(), 4);
+            assert_eq!(sut, [0, 1, 2, 3]);
+
+            sut.insert(i, 42);
+            assert_eq!(sut.len(), 5);
+
+            let mut expected = vec![0, 1, 2, 3];
+            expected.insert(i, 42);
+
+            assert_eq!(
+                sut,
+                expected.as_slice(),
+                "{:?} {:?}",
+                sut.chunks,
+                expected.as_slice()
+            );
+        }
+    }
+
+    #[test]
+    fn test_remove_from_full_array_at_every_index() {
+        for i in 0..4 {
+            let mut sut: ArrayList<_, 4> = ArrayList::new();
+            sut.extend(0..4);
+            assert_eq!(sut.len(), 4);
+            assert_eq!(sut, [0, 1, 2, 3]);
+
+            sut.remove(i);
+            assert_eq!(sut.len(), 3);
+
+            let mut expected = vec![0, 1, 2, 3];
+            expected.remove(i);
+
+            assert_eq!(
+                sut,
+                expected.as_slice(),
+                "{:?} {:?}",
+                sut.chunks,
+                expected.as_slice()
+            );
+        }
+    }
+
+    #[test]
+    fn test_raw_insert() {
+        fn _test<const N: usize>()
+        where
+            Usize<N>: ChunkCapacity,
+        {
+            let mut sut = ArrayList::<i32, N>::new();
+            assert!(sut.is_empty());
+            assert_eq!(sut.len(), 0);
+            assert_eq!(sut.front(), None);
+            assert_eq!(sut.back(), None);
+            assert_eq!(sut.get(0), None);
+            assert_eq!(sut, []);
+
+            sut.raw_insert(0, 0, 42);
+            assert!(!sut.is_empty());
+            assert_eq!(sut.len(), 1);
+            assert_eq!(sut.front(), Some(&42));
+            assert_eq!(sut.back(), Some(&42));
+            assert_eq!(sut.get(0), Some(&42));
+            assert_eq!(sut, [42]);
+
+            sut.raw_insert(0, 1, 96);
+            assert!(!sut.is_empty());
+            assert_eq!(sut.len(), 2);
+            assert_eq!(sut.front(), Some(&42));
+            assert_eq!(sut.back(), Some(&96));
+            assert_eq!(sut.get(0), Some(&42));
+            assert_eq!(sut.get(1), Some(&96));
+            assert_eq!(sut, [42, 96]);
+
+            sut.raw_insert(0, 1, 64);
+            assert!(!sut.is_empty());
+            assert_eq!(sut.len(), 3);
+            assert_eq!(sut.front(), Some(&42));
+            assert_eq!(sut.back(), Some(&96));
+            assert_eq!(sut.get(0), Some(&42));
+            assert_eq!(sut.get(1), Some(&64));
+            assert_eq!(sut.get(2), Some(&96));
+            assert_eq!(sut, [42, 64, 96]);
+
+            sut.raw_insert(0, 0, 32);
+            assert!(!sut.is_empty());
+            assert_eq!(sut.len(), 4);
+            assert_eq!(sut.front(), Some(&32));
+            assert_eq!(sut.back(), Some(&96));
+            assert_eq!(sut.get(0), Some(&32));
+            assert_eq!(sut.get(1), Some(&42));
+            assert_eq!(sut.get(2), Some(&64));
+            assert_eq!(sut.get(3), Some(&96));
+            assert_eq!(sut, [32, 42, 64, 96]);
+
+            let back_chunk_index = sut.chunks.len().saturating_sub(1);
+            let back_target_index = sut.chunks[back_chunk_index].len();
+            sut.raw_insert(back_chunk_index, back_target_index, 128);
+            assert!(!sut.is_empty());
+            assert_eq!(sut.len(), 5);
+            assert_eq!(sut.front(), Some(&32));
+            assert_eq!(sut.back(), Some(&128));
+            assert_eq!(sut.get(0), Some(&32));
+            assert_eq!(sut.get(1), Some(&42));
+            assert_eq!(sut.get(2), Some(&64));
+            assert_eq!(sut.get(3), Some(&96));
+            assert_eq!(sut.get(4), Some(&128));
+            assert_eq!(sut, [32, 42, 64, 96, 128]);
+        }
+
+        _test::<1>();
+        _test::<2>();
+        _test::<3>();
+        _test::<4>();
+        _test::<5>();
+        _test::<8>();
+    }
+
+    #[test]
+    fn test_raw_insert_front() {
+        fn _test<const N: usize>()
+        where
+            Usize<N>: ChunkCapacity,
+        {
+            let mut sut = ArrayList::<i32, N>::new();
+            assert!(sut.is_empty());
+            assert_eq!(sut.len(), 0);
+            assert_eq!(sut.front(), None);
+            assert_eq!(sut.back(), None);
+            assert_eq!(sut.get(0), None);
+            assert_eq!(sut, []);
+
+            let mut acc = Vec::with_capacity(128);
+            for i in (0..128).rev() {
+                acc.insert(0, i);
+
+                sut.raw_insert(0, 0, i);
+                assert!(!sut.is_empty());
+                assert_eq!(sut.len(), acc.len());
+                assert_eq!(sut.front(), acc.first());
+                assert_eq!(sut.back(), acc.last());
+                assert_eq!(sut, acc.as_slice());
+            }
+        }
+
+        _test::<1>();
+        _test::<2>();
+        _test::<3>();
+        _test::<4>();
+        _test::<5>();
+        _test::<8>();
+        _test::<16>();
+        _test::<32>();
+        _test::<64>();
+    }
+
+    #[test]
+    fn test_raw_insert_back() {
+        fn _test<const N: usize>()
+        where
+            Usize<N>: ChunkCapacity,
+        {
+            let mut sut = ArrayList::<i32, N>::new();
+            assert!(sut.is_empty());
+            assert_eq!(sut.len(), 0);
+            assert_eq!(sut.front(), None);
+            assert_eq!(sut.back(), None);
+            assert_eq!(sut.get(0), None);
+            assert_eq!(sut, []);
+
+            let mut acc = Vec::with_capacity(128);
+            for i in 0..128 {
+                acc.push(i);
+
+                let back_chunk_index = sut.chunks.len().saturating_sub(1);
+                let back_target_index = sut.chunks.back().map(VecDeque::len).unwrap_or(0);
+                sut.raw_insert(back_chunk_index, back_target_index, i);
+                assert!(!sut.is_empty());
+                assert_eq!(sut.len(), acc.len());
+                assert_eq!(sut.front(), acc.first());
+                assert_eq!(sut.back(), acc.last());
+                assert_eq!(sut, acc.as_slice());
+            }
+        }
+
+        _test::<1>();
+        _test::<2>();
+        _test::<3>();
+        _test::<4>();
+        _test::<5>();
+        _test::<8>();
+        _test::<16>();
+        _test::<32>();
+        _test::<64>();
+    }
+
+    #[quickcheck]
+    fn nightly_test_array_list_behavioural(seed: VecDeque<i32>) {
+        fn _test<const N: usize>(mut expected: VecDeque<i32>)
+        where
+            Usize<N>: ChunkCapacity,
+        {
+            let mut actual = ArrayList::<_, N>::from_iter(expected.iter().copied());
+
+            for _ in 0..32 {
+                let len = expected.len();
+
+                assert_eq!(expected.is_empty(), actual.is_empty());
+                assert_eq!(expected.len(), actual.len());
+
+                assert_eq!(expected.front(), actual.front());
+                assert_eq!(expected.front_mut(), actual.front_mut());
+
+                assert_eq!(expected.back(), actual.back());
+                assert_eq!(expected.back_mut(), actual.back_mut());
+
+                assert_eq!(expected.get(0), actual.get(0));
+                assert_eq!(expected.get_mut(0), actual.get_mut(0));
+
+                assert_eq!(expected.get(1), actual.get(1));
+                assert_eq!(expected.get_mut(1), actual.get_mut(1));
+
+                assert_eq!(
+                    expected.get(len.checked_div(2).unwrap_or(8)),
+                    actual.get(len.checked_div(2).unwrap_or(8))
+                );
+                assert_eq!(
+                    expected.get_mut(len.checked_div(2).unwrap_or(8)),
+                    actual.get_mut(len.checked_div(2).unwrap_or(8))
+                );
+
+                assert_eq!(
+                    expected.get(len.saturating_sub(2)),
+                    actual.get(len.saturating_sub(2))
+                );
+                assert_eq!(
+                    expected.get_mut(len.saturating_sub(2)),
+                    actual.get_mut(len.saturating_sub(2))
+                );
+
+                assert_eq!(
+                    expected.get(len.saturating_sub(1)),
+                    actual.get(len.saturating_sub(1))
+                );
+                assert_eq!(
+                    expected.get_mut(len.saturating_sub(1)),
+                    actual.get_mut(len.saturating_sub(1))
+                );
+
+                assert_eq!(expected.get(len), actual.get(len));
+                assert_eq!(expected.get_mut(len), actual.get_mut(len));
+
+                assert_eq!(actual, expected.make_contiguous() as &[_]);
+
+                let choice = rand::random_range(0..=5);
+                match choice {
+                    0 => {
+                        let value = rand::random();
+                        expected.push_front(value);
+                        actual.push_front(value);
+                    }
+                    1 => {
+                        let index = rand::random_range(0..=len);
+                        let value = rand::random();
+                        expected.insert(index, value);
+                        actual.insert(index, value);
+                    }
+                    2 => {
+                        let value = rand::random();
+                        expected.push_back(value);
+                        actual.push_back(value);
+                    }
+                    3 => assert_eq!(expected.pop_front(), actual.pop_front()),
+                    4 => {
+                        let index = rand::random_range(0..=len);
+                        assert_eq!(expected.remove(index), actual.remove(index))
+                    }
+                    5 => assert_eq!(expected.pop_back(), actual.pop_back()),
+                    _ => unreachable!(),
+                }
+            }
+
+            expected.clear();
+            actual.clear();
+
+            assert_eq!(expected.is_empty(), actual.is_empty());
+            assert_eq!(expected.len(), actual.len());
+
+            assert_eq!(expected.front(), actual.front());
+            assert_eq!(expected.front_mut(), actual.front_mut());
+
+            assert_eq!(expected.back(), actual.back());
+            assert_eq!(expected.back_mut(), actual.back_mut());
+        }
+
+        _test::<1>(seed.clone());
+        _test::<2>(seed.clone());
+        _test::<3>(seed.clone());
+        _test::<4>(seed.clone());
+        _test::<5>(seed.clone());
+        _test::<8>(seed.clone());
+        _test::<16>(seed.clone());
+        _test::<32>(seed.clone());
+        _test::<64>(seed.clone());
+        _test::<128>(seed.clone());
+        _test::<256>(seed.clone());
+        _test::<512>(seed.clone());
     }
 }

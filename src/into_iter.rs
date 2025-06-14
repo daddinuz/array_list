@@ -6,33 +6,45 @@ use crate::{ArrayList, ChunkCapacity, Usize};
 
 /// An iterator over the elements of a ArrayList.
 ///
-/// This struct is created by ArrayList::iter().
-#[derive(Default, Clone)]
-pub struct Iter<'a, T, const N: usize>
+/// This struct is created by ArrayList::into_iter().
+#[derive(Clone)]
+pub struct IntoIter<T, const N: usize>
 where
     Usize<N>: ChunkCapacity,
 {
-    delegate: Flatten<vec_deque::Iter<'a, VecDeque<T>>>,
+    delegate: Flatten<vec_deque::IntoIter<VecDeque<T>>>,
 }
 
-const _: [(); core::mem::size_of::<usize>() * 12] = [(); core::mem::size_of::<Iter<usize, 2>>()];
+const _: [(); core::mem::size_of::<usize>() * 12] =
+    [(); core::mem::size_of::<IntoIter<usize, 2>>()];
 
-impl<'a, T, const N: usize> Iter<'a, T, N>
+impl<T, const N: usize> Default for IntoIter<T, N>
 where
     Usize<N>: ChunkCapacity,
 {
-    pub(crate) fn from_list(list: &'a ArrayList<T, N>) -> Self {
+    fn default() -> Self {
         Self {
-            delegate: list.chunks.iter().flatten(),
+            delegate: VecDeque::new().into_iter().flatten(),
         }
     }
 }
 
-impl<'a, T, const N: usize> Iterator for Iter<'a, T, N>
+impl<T, const N: usize> IntoIter<T, N>
 where
     Usize<N>: ChunkCapacity,
 {
-    type Item = &'a T;
+    pub(crate) fn from_list(list: ArrayList<T, N>) -> Self {
+        Self {
+            delegate: list.chunks.into_iter().flatten(),
+        }
+    }
+}
+
+impl<T, const N: usize> Iterator for IntoIter<T, N>
+where
+    Usize<N>: ChunkCapacity,
+{
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.delegate.next()
@@ -299,7 +311,7 @@ where
     }
 }
 
-impl<T, const N: usize> DoubleEndedIterator for Iter<'_, T, N>
+impl<T, const N: usize> DoubleEndedIterator for IntoIter<T, N>
 where
     Usize<N>: ChunkCapacity,
 {
@@ -328,9 +340,9 @@ where
     }
 }
 
-impl<T, const N: usize> FusedIterator for Iter<'_, T, N> where Usize<N>: ChunkCapacity {}
+impl<T, const N: usize> FusedIterator for IntoIter<T, N> where Usize<N>: ChunkCapacity {}
 
-impl<T, const N: usize> core::fmt::Debug for Iter<'_, T, N>
+impl<T, const N: usize> core::fmt::Debug for IntoIter<T, N>
 where
     T: core::fmt::Debug,
     Usize<N>: ChunkCapacity,
@@ -348,47 +360,47 @@ mod tests {
 
     use crate::{ArrayList, ChunkCapacity, Usize};
 
-    use super::Iter;
+    use super::IntoIter;
 
     #[test]
     fn test_default_iterator_yields_nothing() {
-        let mut sut: Iter<i32, 2> = Default::default();
+        let mut sut: IntoIter<i32, 2> = Default::default();
         assert_eq!(sut.next(), None);
         assert_eq!(sut.next_back(), None);
     }
 
     #[test]
     fn test_iter_forward() {
-        let mut list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
-        let sut = list.iter();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[0, 1, 2, 3, 4]);
+        let seed = [];
+        let list = ArrayList::<usize, 2>::from(seed);
+        assert!(seed.into_iter().eq(list.into_iter()));
 
-        list.clear();
-        let sut = list.iter();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[]);
+        let seed = [0, 1, 2, 3, 4];
+        let list = ArrayList::<usize, 2>::from(seed);
+        assert!(seed.into_iter().eq(list.into_iter()));
     }
 
     #[test]
     fn test_iter_backward() {
-        let mut list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
-        let sut = list.iter().rev();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[4, 3, 2, 1, 0]);
+        let seed = [];
+        let list = ArrayList::<usize, 2>::from(seed);
+        assert!(seed.into_iter().rev().eq(list.into_iter().rev()));
 
-        list.clear();
-        let sut = list.iter().rev();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[]);
+        let seed = [0, 1, 2, 3, 4];
+        let list = ArrayList::<usize, 2>::from(seed);
+        assert!(seed.into_iter().rev().eq(list.into_iter().rev()));
     }
 
     #[test]
     fn test_double_ended_iterator_works_correctly() {
         let list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
 
-        let mut sut = list.iter();
-        assert_eq!(sut.next(), Some(&0));
-        assert_eq!(sut.next_back(), Some(&4));
-        assert_eq!(sut.next(), Some(&1));
-        assert_eq!(sut.next_back(), Some(&3));
-        assert_eq!(sut.next(), Some(&2));
+        let mut sut = list.into_iter();
+        assert_eq!(sut.next(), Some(0));
+        assert_eq!(sut.next_back(), Some(4));
+        assert_eq!(sut.next(), Some(1));
+        assert_eq!(sut.next_back(), Some(3));
+        assert_eq!(sut.next(), Some(2));
         assert_eq!(sut.next_back(), None);
         assert_eq!(sut.next(), None);
     }
@@ -397,28 +409,28 @@ mod tests {
     fn test_last_works_correctly() {
         let array = [0, 1, 2, 3, 4];
         let list = ArrayList::<usize, 2>::from(array);
-        let sut = list.iter();
-        assert_eq!(sut.last(), Some(&4));
+        let sut = list.into_iter();
+        assert_eq!(sut.last(), Some(4));
     }
 
     #[test]
     fn test_clone_works_correctly() {
         let list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
 
-        let mut base = list.iter();
+        let mut base = list.into_iter();
 
         let sut = base.clone();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[0, 1, 2, 3, 4]);
+        assert_eq!(&sut.collect::<Vec<_>>(), &[0, 1, 2, 3, 4]);
 
         base.next();
 
         let sut = base.clone();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[1, 2, 3, 4]);
+        assert_eq!(&sut.collect::<Vec<_>>(), &[1, 2, 3, 4]);
 
         base.next_back();
 
         let sut = base.clone();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[1, 2, 3]);
+        assert_eq!(&sut.collect::<Vec<_>>(), &[1, 2, 3]);
     }
 
     #[quickcheck]
@@ -428,19 +440,43 @@ mod tests {
             Usize<N>: ChunkCapacity,
         {
             let mut actual = ArrayList::<_, N>::new();
-            actual.extend(expected.iter().copied());
+            actual.extend(expected.into_iter().copied());
 
-            assert!(actual.iter().eq(expected.iter()));
-            assert!(actual.iter().rev().eq(expected.iter().rev()));
+            assert!(actual.clone().into_iter().eq(expected.into_iter().copied()));
+            assert!(
+                actual
+                    .clone()
+                    .into_iter()
+                    .rev()
+                    .eq(expected.into_iter().copied().rev())
+            );
             assert_eq!(
-                actual.iter().partial_cmp(expected.iter()),
+                actual
+                    .clone()
+                    .into_iter()
+                    .partial_cmp(expected.into_iter().copied()),
                 Some(Ordering::Equal)
             );
-            assert_eq!(actual.iter().count(), expected.iter().count());
-            assert_eq!(actual.iter().max(), expected.iter().max());
-            assert_eq!(actual.iter().min(), expected.iter().min());
-            assert_eq!(actual.iter().is_sorted(), expected.iter().is_sorted());
-            assert_eq!(actual.iter().copied().collect::<ArrayList<_, N>>(), actual);
+            assert_eq!(
+                actual.clone().into_iter().count(),
+                expected.into_iter().count()
+            );
+            assert_eq!(
+                actual.clone().into_iter().max(),
+                expected.into_iter().copied().max()
+            );
+            assert_eq!(
+                actual.clone().into_iter().min(),
+                expected.into_iter().copied().min()
+            );
+            assert_eq!(
+                actual.clone().into_iter().is_sorted(),
+                expected.into_iter().is_sorted()
+            );
+            assert_eq!(
+                actual.clone().into_iter().collect::<ArrayList<_, N>>(),
+                actual
+            );
         }
 
         _test::<1>(&seed);

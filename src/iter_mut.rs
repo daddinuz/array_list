@@ -1,38 +1,38 @@
-use core::iter::FusedIterator;
 use std::collections::{VecDeque, vec_deque};
 use std::iter::Flatten;
+use std::iter::FusedIterator;
 
 use crate::{ArrayList, ChunkCapacity, Usize};
 
 /// An iterator over the elements of a ArrayList.
 ///
-/// This struct is created by ArrayList::iter().
-#[derive(Default, Clone)]
-pub struct Iter<'a, T, const N: usize>
+/// This struct is created by ArrayList::iter_mut().
+#[derive(Default)]
+pub struct IterMut<'a, T, const N: usize>
 where
     Usize<N>: ChunkCapacity,
 {
-    delegate: Flatten<vec_deque::Iter<'a, VecDeque<T>>>,
+    delegate: Flatten<vec_deque::IterMut<'a, VecDeque<T>>>,
 }
 
-const _: [(); core::mem::size_of::<usize>() * 12] = [(); core::mem::size_of::<Iter<usize, 2>>()];
+const _: [(); core::mem::size_of::<usize>() * 12] = [(); core::mem::size_of::<IterMut<usize, 2>>()];
 
-impl<'a, T, const N: usize> Iter<'a, T, N>
+impl<'a, T, const N: usize> IterMut<'a, T, N>
 where
     Usize<N>: ChunkCapacity,
 {
-    pub(crate) fn from_list(list: &'a ArrayList<T, N>) -> Self {
+    pub(crate) fn from_list(list: &'a mut ArrayList<T, N>) -> Self {
         Self {
-            delegate: list.chunks.iter().flatten(),
+            delegate: list.chunks.iter_mut().flatten(),
         }
     }
 }
 
-impl<'a, T, const N: usize> Iterator for Iter<'a, T, N>
+impl<'a, T, const N: usize> Iterator for IterMut<'a, T, N>
 where
     Usize<N>: ChunkCapacity,
 {
-    type Item = &'a T;
+    type Item = &'a mut T;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.delegate.next()
@@ -299,7 +299,7 @@ where
     }
 }
 
-impl<T, const N: usize> DoubleEndedIterator for Iter<'_, T, N>
+impl<T, const N: usize> DoubleEndedIterator for IterMut<'_, T, N>
 where
     Usize<N>: ChunkCapacity,
 {
@@ -328,9 +328,9 @@ where
     }
 }
 
-impl<T, const N: usize> FusedIterator for Iter<'_, T, N> where Usize<N>: ChunkCapacity {}
+impl<T, const N: usize> FusedIterator for IterMut<'_, T, N> where Usize<N>: ChunkCapacity {}
 
-impl<T, const N: usize> core::fmt::Debug for Iter<'_, T, N>
+impl<T, const N: usize> core::fmt::Debug for IterMut<'_, T, N>
 where
     T: core::fmt::Debug,
     Usize<N>: ChunkCapacity,
@@ -348,11 +348,11 @@ mod tests {
 
     use crate::{ArrayList, ChunkCapacity, Usize};
 
-    use super::Iter;
+    use super::IterMut;
 
     #[test]
     fn test_default_iterator_yields_nothing() {
-        let mut sut: Iter<i32, 2> = Default::default();
+        let mut sut: IterMut<i32, 2> = Default::default();
         assert_eq!(sut.next(), None);
         assert_eq!(sut.next_back(), None);
     }
@@ -360,35 +360,45 @@ mod tests {
     #[test]
     fn test_iter_forward() {
         let mut list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
-        let sut = list.iter();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[0, 1, 2, 3, 4]);
+
+        let mut sut = list.iter_mut();
+        assert_eq!(sut.next(), Some(&mut 0));
+        assert_eq!(sut.next(), Some(&mut 1));
+        assert_eq!(sut.next(), Some(&mut 2));
+        assert_eq!(sut.next(), Some(&mut 3));
+        assert_eq!(sut.next(), Some(&mut 4));
 
         list.clear();
-        let sut = list.iter();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[]);
+        let mut sut = list.iter_mut();
+        assert_eq!(sut.next(), None);
     }
 
     #[test]
     fn test_iter_backward() {
         let mut list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
-        let sut = list.iter().rev();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[4, 3, 2, 1, 0]);
+
+        let mut sut = list.iter_mut().rev();
+        assert_eq!(sut.next(), Some(&mut 4));
+        assert_eq!(sut.next(), Some(&mut 3));
+        assert_eq!(sut.next(), Some(&mut 2));
+        assert_eq!(sut.next(), Some(&mut 1));
+        assert_eq!(sut.next(), Some(&mut 0));
 
         list.clear();
-        let sut = list.iter().rev();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[]);
+        let mut sut = list.iter_mut().rev();
+        assert_eq!(sut.next(), None);
     }
 
     #[test]
     fn test_double_ended_iterator_works_correctly() {
-        let list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
+        let mut list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
+        let mut sut = list.iter_mut();
 
-        let mut sut = list.iter();
-        assert_eq!(sut.next(), Some(&0));
-        assert_eq!(sut.next_back(), Some(&4));
-        assert_eq!(sut.next(), Some(&1));
-        assert_eq!(sut.next_back(), Some(&3));
-        assert_eq!(sut.next(), Some(&2));
+        assert_eq!(sut.next(), Some(&mut 0));
+        assert_eq!(sut.next_back(), Some(&mut 4));
+        assert_eq!(sut.next(), Some(&mut 1));
+        assert_eq!(sut.next_back(), Some(&mut 3));
+        assert_eq!(sut.next(), Some(&mut 2));
         assert_eq!(sut.next_back(), None);
         assert_eq!(sut.next(), None);
     }
@@ -396,64 +406,61 @@ mod tests {
     #[test]
     fn test_last_works_correctly() {
         let array = [0, 1, 2, 3, 4];
-        let list = ArrayList::<usize, 2>::from(array);
-        let sut = list.iter();
-        assert_eq!(sut.last(), Some(&4));
+        let mut list = ArrayList::<usize, 2>::from(array);
+        let sut = list.iter_mut();
+        assert_eq!(sut.last(), Some(&mut 4));
     }
 
     #[test]
-    fn test_clone_works_correctly() {
-        let list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
-
-        let mut base = list.iter();
-
-        let sut = base.clone();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[0, 1, 2, 3, 4]);
-
-        base.next();
-
-        let sut = base.clone();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[1, 2, 3, 4]);
-
-        base.next_back();
-
-        let sut = base.clone();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[1, 2, 3]);
+    fn test_miri_complains() {
+        let array = [0, 1, 2, 3, 4];
+        let mut list = ArrayList::<usize, 2>::from(array);
+        let sut = list.iter_mut();
+        let mut vec: Vec<_> = sut.collect();
+        *vec[0] += 1;
+        assert_eq!(list.get(0), Some(&1));
+        assert_eq!(list.get(1), Some(&1));
     }
 
     #[quickcheck]
-    fn nightly_test_iter_behavioural(seed: Vec<i32>) {
-        fn _test<const N: usize>(expected: &[i32])
+    fn nightly_test_iter_mut_behavioural(mut seed: Vec<i32>) {
+        fn _test<const N: usize>(expected: &mut [i32])
         where
             Usize<N>: ChunkCapacity,
         {
             let mut actual = ArrayList::<_, N>::new();
             actual.extend(expected.iter().copied());
 
-            assert!(actual.iter().eq(expected.iter()));
-            assert!(actual.iter().rev().eq(expected.iter().rev()));
+            assert!(actual.iter_mut().eq(expected.iter_mut()));
+            assert!(actual.iter_mut().rev().eq(expected.iter_mut().rev()));
             assert_eq!(
-                actual.iter().partial_cmp(expected.iter()),
+                actual.iter_mut().partial_cmp(expected.iter_mut()),
                 Some(Ordering::Equal)
             );
-            assert_eq!(actual.iter().count(), expected.iter().count());
-            assert_eq!(actual.iter().max(), expected.iter().max());
-            assert_eq!(actual.iter().min(), expected.iter().min());
-            assert_eq!(actual.iter().is_sorted(), expected.iter().is_sorted());
-            assert_eq!(actual.iter().copied().collect::<ArrayList<_, N>>(), actual);
+            assert_eq!(actual.iter_mut().count(), expected.iter_mut().count());
+            assert_eq!(actual.iter_mut().max(), expected.iter_mut().max());
+            assert_eq!(actual.iter_mut().min(), expected.iter_mut().min());
+            assert_eq!(
+                actual.iter_mut().is_sorted(),
+                expected.iter_mut().is_sorted()
+            );
+            assert_eq!(
+                actual.iter_mut().map(|n| *n).collect::<ArrayList<_, N>>(),
+                actual
+            );
         }
 
-        _test::<1>(&seed);
-        _test::<2>(&seed);
-        _test::<3>(&seed);
-        _test::<4>(&seed);
-        _test::<5>(&seed);
-        _test::<8>(&seed);
-        _test::<16>(&seed);
-        _test::<32>(&seed);
-        _test::<64>(&seed);
-        _test::<128>(&seed);
-        _test::<256>(&seed);
-        _test::<512>(&seed);
+        _test::<1>(&mut seed);
+        _test::<2>(&mut seed);
+        _test::<3>(&mut seed);
+        _test::<4>(&mut seed);
+        _test::<5>(&mut seed);
+        _test::<8>(&mut seed);
+        _test::<16>(&mut seed);
+        _test::<32>(&mut seed);
+        _test::<64>(&mut seed);
+        _test::<128>(&mut seed);
+        _test::<256>(&mut seed);
+        _test::<512>(&mut seed);
     }
 }
