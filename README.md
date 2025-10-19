@@ -1,34 +1,23 @@
-# ArrayList
+# array_list
 
-`ArrayList` is a Rust crate that implements an **unrolled linked list** powered by a **XOR linked list** as its underlying structure.
-It combines features of both a `Vec` and a `LinkedList`, offering efficient sequential access with reduced pointer overhead compared
-to a traditional doubly linked list.  
-
-This crate is designed to handle dynamic collections efficiently, particularly in scenarios where frequent insertions, deletions,
-or iterations are required.
+`array_list` implements an **unrolled linked list** datastructure with features
+that combine the simplicity of a `Vec` and the flexibility of a `LinkedList`.
 
 ## Features
+- Ordered sequence with index based elements access and efficient random access lookups.
+- Chunked storage, which improves cache locality and reduces pointer overhead compared to traditional linked lists.
+- Stable `Cursor` API similar to the `LinkedList` one on nightly, allowing efficient operations around a point in the list.
+- Dynamic growth, balancing between `Vec` and `LinkedList` characteristics.
 
-- **Dynamic:** Combines the benefits of a `Vec` (compact, cache-friendly storage) and a `LinkedList` (efficient insertions and deletions).
-- **Reduced pointer overhead:** Implements a **XOR linked list**, requiring only a single pointer per node for bidirectional traversal.
-- **Customizable chunk size:** The size of each chunk is determined at compile time via a const generic parameter up to 128 elements.
-- **Efficient memory operations:** Splits and merges nodes dynamically, redistributing elements when necessary.
-- **Rich API:** Provides functionality for:
-  - Insertions, deletions and access at arbitrary positions.
-  - Index-based access with `get` methods.
-  - Access to front and back elements.
+## Use Cases
+`array_list` is ideal for scenarios where:
+- You need a ordered collection with random access capabilities.
+- You require frequent insertions and deletions anywhere in the list.
+- Memory efficiency and improved cache performance over plain LinkedList are priorities.
 
-## Strengths
-
-- **Sequential access:** By grouping multiple elements in each node, it reduces the pointer-following overhead inherent in linked lists.
-- **Low allocation cost:** Nodes store multiple elements in contiguous memory, minimizing allocation frequency.
-- **Customizable performance:** The chunk size can be tuned to balance memory usage and cache performance.
-
-## Pitfalls
-
-- **Random access is slower than `Vec`:** While `ArrayList` provides index-based access, it requires traversing the list, making it less efficient than `Vec` for frequent random access.
-- **Unsafe code:** The implementation relies on `unsafe` code for managing memory and pointers. However, it is extensively tested.
-- **More complex than `Vec` or `LinkedList`:** The additional logic for node splitting, merging, and XOR-linked traversal increases complexity compared to simpler collections.
+## Note
+This crate is not related to Java's `ArrayList` despite its name.  
+The design and functionality are entirely tailored to Rust's ecosystem.
 
 ## Installation
 
@@ -42,7 +31,7 @@ or edit your Cargo.toml manually by adding:
 
 ```toml
 [dependencies]
-array_list = "0.3"
+array_list = "0.4"
 ```
 
 ## Example Usage
@@ -71,12 +60,22 @@ fn main() {
 
 ## Safety
 
-This crate contains `unsafe` code to achieve optimal performance and memory management.
-
-However:
-- All code is tested under **Miri** to ensure memory safety.
-- The code coverage is approximately **90%**, providing strong confidence in correctness.
+- The code coverage is approximately **75%**, providing strong confidence in correctness.
+  You can run the complete test suite as:
+  ```bash
+  cargo +nightly test --features nightly_tests
+  ```
 - You can generate the code coverage report using **tarpaulin**.
+  You can run the code coverage report like this:
+  ```bash
+  cargo +nightly tarpaulin --features nightly_tests
+  ```
+- All code is tested under **Miri** to ensure memory safety.
+  You can run the complete test suite under miri as:
+  ```bash
+  # NOTE: it may take a while to complete.
+  cargo +nightly miri test --features nightly_tests
+  ```
 
 ## Contributing
 
