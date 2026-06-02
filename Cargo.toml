@@ -1,18 +1,29 @@
 [package]
-authors = ["Davide Di Carlo <daddinuz@gmail.com>"]
-description = "A dynamic container that combines the characteristics of a Vec and a LinkedList"
 name = "array_list"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
+rust-version = "1.87"
+
+authors = ["Davide Di Carlo <daddinuz@gmail.com>"]
+description = "A chunked ordered collection with iterators and cursors"
+repository = "https://github.com/daddinuz/array_list"
+documentation = "https://docs.rs/array_list"
+readme = "README.md"
 license = "MIT"
 keywords = ["array", "collections", "linked-list", "list", "vec"]
-rust-version = "1.85"
-repository = "https://github.com/daddinuz/array_list"
+categories = ["data-structures", "no-std"]
+exclude = [".github/", ".gitignore"]
+
+[dependencies]
+cap_vec = "0.3"
 
 [dev-dependencies]
-quickcheck = { version = "1", default-features = false }
-quickcheck_macros = { version = "1", default-features = false }
-rand = { version = "0.9", default-features = false, features = ["thread_rng"] }
+criterion = "0.8"
+proptest = "1"
 
-[features]
-nightly_tests = []
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(miri)"] }
+
+[[bench]]
+name = "benchmark"
+harness = false

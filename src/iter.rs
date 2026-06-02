@@ -1,459 +1,251 @@
-use core::iter::FusedIterator;
-use std::collections::{VecDeque, vec_deque};
-use std::iter::Flatten;
+use alloc::collections::vec_deque;
 
-use crate::{ArrayList, ChunkCapacity, Usize};
+use core::iter::{Flatten, FusedIterator};
 
-/// An iterator over the elements of a ArrayList.
+use cap_vec::CapVec;
+
+use crate::ArrayList;
+
+type Delegate<'a, T, const N: usize> = Flatten<vec_deque::Iter<'a, CapVec<T, N>>>;
+
+/// A read-only iterator over an [`ArrayList`].
 ///
-/// This struct is created by ArrayList::iter().
-#[derive(Default, Clone)]
-pub struct Iter<'a, T, const N: usize>
-where
-    Usize<N>: ChunkCapacity,
-{
-    delegate: Flatten<vec_deque::Iter<'a, VecDeque<T>>>,
+/// `Iter` yields shared references in logical list order. It can also consume
+/// elements from the back.
+///
+/// This struct is created by [`ArrayList::iter`].
+///
+/// # Example
+/// ```rust
+/// use array_list::ArrayList;
+///
+/// let list: ArrayList<i32, 4> = ArrayList::from([1, 2, 3]);
+/// let mut iter = list.iter();
+///
+/// assert_eq!(iter.next(), Some(&1));
+/// assert_eq!(iter.next_back(), Some(&3));
+/// assert_eq!(iter.next(), Some(&2));
+/// assert_eq!(iter.next(), None);
+/// assert_eq!(iter.next_back(), None);
+/// ```
+///
+/// ```compile_fail
+/// use array_list::Iter;
+///
+/// let _ = Iter::<i32, 3>::default();
+/// ```
+pub struct Iter<'a, T, const N: usize> {
+    delegate: Delegate<'a, T, N>,
 }
 
-const _: [(); core::mem::size_of::<usize>() * 12] = [(); core::mem::size_of::<Iter<usize, 2>>()];
+const _: [(); core::mem::size_of::<usize>() * 8] = [(); core::mem::size_of::<Iter<usize, 4>>()];
 
-impl<'a, T, const N: usize> Iter<'a, T, N>
-where
-    Usize<N>: ChunkCapacity,
-{
+impl<T, const N: usize> Default for Iter<'_, T, N> {
+    fn default() -> Self {
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
+
+        Self {
+            delegate: Default::default(),
+        }
+    }
+}
+
+impl<'a, T, const N: usize> Iter<'a, T, N> {
     pub(crate) fn from_list(list: &'a ArrayList<T, N>) -> Self {
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
+
         Self {
             delegate: list.chunks.iter().flatten(),
         }
     }
 }
 
-impl<'a, T, const N: usize> Iterator for Iter<'a, T, N>
-where
-    Usize<N>: ChunkCapacity,
-{
+impl<T, const N: usize> Clone for Iter<'_, T, N> {
+    fn clone(&self) -> Self {
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
+
+        Self {
+            delegate: self.delegate.clone(),
+        }
+    }
+}
+
+impl<'a, T, const N: usize> Iterator for Iter<'a, T, N> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
+
         self.delegate.next()
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
+
         self.delegate.size_hint()
     }
 
-    fn last(self) -> Option<Self::Item> {
-        self.delegate.last()
-    }
-
-    fn count(self) -> usize
-    where
-        Self: Sized,
-    {
-        self.delegate.count()
-    }
-
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
+
         self.delegate.nth(n)
     }
 
-    fn for_each<F>(self, f: F)
-    where
-        Self: Sized,
-        F: FnMut(Self::Item),
-    {
-        self.delegate.for_each(f);
-    }
+    fn last(self) -> Option<Self::Item> {
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
 
-    fn collect<B: FromIterator<Self::Item>>(self) -> B
-    where
-        Self: Sized,
-    {
-        self.delegate.collect()
-    }
-
-    fn partition<B, F>(self, f: F) -> (B, B)
-    where
-        Self: Sized,
-        B: Default + Extend<Self::Item>,
-        F: FnMut(&Self::Item) -> bool,
-    {
-        self.delegate.partition(f)
+        self.delegate.last()
     }
 
     fn fold<B, F>(self, init: B, f: F) -> B
     where
-        Self: Sized,
         F: FnMut(B, Self::Item) -> B,
     {
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
+
         self.delegate.fold(init, f)
     }
 
-    fn reduce<F>(self, f: F) -> Option<Self::Item>
+    fn for_each<F>(self, f: F)
     where
-        Self: Sized,
-        F: FnMut(Self::Item, Self::Item) -> Self::Item,
+        F: FnMut(Self::Item),
     {
-        self.delegate.reduce(f)
-    }
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
 
-    fn all<F>(&mut self, f: F) -> bool
-    where
-        Self: Sized,
-        F: FnMut(Self::Item) -> bool,
-    {
-        self.delegate.all(f)
-    }
-
-    fn any<F>(&mut self, f: F) -> bool
-    where
-        Self: Sized,
-        F: FnMut(Self::Item) -> bool,
-    {
-        self.delegate.any(f)
-    }
-
-    fn find<P>(&mut self, predicate: P) -> Option<Self::Item>
-    where
-        Self: Sized,
-        P: FnMut(&Self::Item) -> bool,
-    {
-        self.delegate.find(predicate)
-    }
-
-    fn find_map<B, F>(&mut self, f: F) -> Option<B>
-    where
-        Self: Sized,
-        F: FnMut(Self::Item) -> Option<B>,
-    {
-        self.delegate.find_map(f)
-    }
-
-    fn position<P>(&mut self, predicate: P) -> Option<usize>
-    where
-        Self: Sized,
-        P: FnMut(Self::Item) -> bool,
-    {
-        self.delegate.position(predicate)
-    }
-
-    fn max(self) -> Option<Self::Item>
-    where
-        Self: Sized,
-        Self::Item: Ord,
-    {
-        self.delegate.max()
-    }
-
-    fn min(self) -> Option<Self::Item>
-    where
-        Self: Sized,
-        Self::Item: Ord,
-    {
-        self.delegate.min()
-    }
-
-    fn max_by_key<B: Ord, F>(self, f: F) -> Option<Self::Item>
-    where
-        Self: Sized,
-        F: FnMut(&Self::Item) -> B,
-    {
-        self.delegate.max_by_key(f)
-    }
-
-    fn max_by<F>(self, compare: F) -> Option<Self::Item>
-    where
-        Self: Sized,
-        F: FnMut(&Self::Item, &Self::Item) -> std::cmp::Ordering,
-    {
-        self.delegate.max_by(compare)
-    }
-
-    fn min_by_key<B: Ord, F>(self, f: F) -> Option<Self::Item>
-    where
-        Self: Sized,
-        F: FnMut(&Self::Item) -> B,
-    {
-        self.delegate.min_by_key(f)
-    }
-
-    fn min_by<F>(self, compare: F) -> Option<Self::Item>
-    where
-        Self: Sized,
-        F: FnMut(&Self::Item, &Self::Item) -> std::cmp::Ordering,
-    {
-        self.delegate.min_by(compare)
-    }
-
-    fn sum<S>(self) -> S
-    where
-        Self: Sized,
-        S: std::iter::Sum<Self::Item>,
-    {
-        self.delegate.sum()
-    }
-
-    fn product<P>(self) -> P
-    where
-        Self: Sized,
-        P: std::iter::Product<Self::Item>,
-    {
-        self.delegate.product()
-    }
-
-    fn cmp<I>(self, other: I) -> std::cmp::Ordering
-    where
-        I: IntoIterator<Item = Self::Item>,
-        Self::Item: Ord,
-        Self: Sized,
-    {
-        self.delegate.cmp(other)
-    }
-
-    fn partial_cmp<I>(self, other: I) -> Option<std::cmp::Ordering>
-    where
-        I: IntoIterator,
-        Self::Item: PartialOrd<I::Item>,
-        Self: Sized,
-    {
-        self.delegate.partial_cmp(other)
-    }
-
-    fn eq<I>(self, other: I) -> bool
-    where
-        I: IntoIterator,
-        Self::Item: PartialEq<I::Item>,
-        Self: Sized,
-    {
-        self.delegate.eq(other)
-    }
-
-    fn ne<I>(self, other: I) -> bool
-    where
-        I: IntoIterator,
-        Self::Item: PartialEq<I::Item>,
-        Self: Sized,
-    {
-        self.delegate.ne(other)
-    }
-
-    fn lt<I>(self, other: I) -> bool
-    where
-        I: IntoIterator,
-        Self::Item: PartialOrd<I::Item>,
-        Self: Sized,
-    {
-        self.delegate.lt(other)
-    }
-
-    fn le<I>(self, other: I) -> bool
-    where
-        I: IntoIterator,
-        Self::Item: PartialOrd<I::Item>,
-        Self: Sized,
-    {
-        self.delegate.le(other)
-    }
-
-    fn gt<I>(self, other: I) -> bool
-    where
-        I: IntoIterator,
-        Self::Item: PartialOrd<I::Item>,
-        Self: Sized,
-    {
-        self.delegate.gt(other)
-    }
-
-    fn ge<I>(self, other: I) -> bool
-    where
-        I: IntoIterator,
-        Self::Item: PartialOrd<I::Item>,
-        Self: Sized,
-    {
-        self.delegate.ge(other)
-    }
-
-    fn is_sorted(self) -> bool
-    where
-        Self: Sized,
-        Self::Item: PartialOrd,
-    {
-        self.delegate.is_sorted()
-    }
-
-    fn is_sorted_by<F>(self, compare: F) -> bool
-    where
-        Self: Sized,
-        F: FnMut(&Self::Item, &Self::Item) -> bool,
-    {
-        self.delegate.is_sorted_by(compare)
-    }
-
-    fn is_sorted_by_key<F, K>(self, f: F) -> bool
-    where
-        Self: Sized,
-        F: FnMut(Self::Item) -> K,
-        K: PartialOrd,
-    {
-        self.delegate.is_sorted_by_key(f)
+        self.delegate.for_each(f);
     }
 }
 
-impl<T, const N: usize> DoubleEndedIterator for Iter<'_, T, N>
-where
-    Usize<N>: ChunkCapacity,
-{
+impl<T, const N: usize> DoubleEndedIterator for Iter<'_, T, N> {
     fn next_back(&mut self) -> Option<Self::Item> {
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
+
         self.delegate.next_back()
     }
 
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
+
         self.delegate.nth_back(n)
     }
 
     fn rfold<B, F>(self, init: B, f: F) -> B
     where
-        Self: Sized,
         F: FnMut(B, Self::Item) -> B,
     {
-        self.delegate.rfold(init, f)
-    }
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
 
-    fn rfind<P>(&mut self, predicate: P) -> Option<Self::Item>
-    where
-        Self: Sized,
-        P: FnMut(&Self::Item) -> bool,
-    {
-        self.delegate.rfind(predicate)
+        self.delegate.rfold(init, f)
     }
 }
 
-impl<T, const N: usize> FusedIterator for Iter<'_, T, N> where Usize<N>: ChunkCapacity {}
+impl<T, const N: usize> FusedIterator for Iter<'_, T, N> {}
 
 impl<T, const N: usize> core::fmt::Debug for Iter<'_, T, N>
 where
     T: core::fmt::Debug,
-    Usize<N>: ChunkCapacity,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:?}", self.delegate)
+        const { assert!(N >= crate::MIN_CHUNK_CAPACITY) };
+
+        self.delegate.fmt(f)
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
-    use std::cmp::Ordering;
+    use crate::ArrayList;
+    use alloc::vec::Vec;
 
-    use quickcheck_macros::quickcheck;
-
-    use crate::{ArrayList, ChunkCapacity, Usize};
-
-    use super::Iter;
-
-    #[test]
-    fn test_default_iterator_yields_nothing() {
-        let mut sut: Iter<i32, 2> = Default::default();
-        assert_eq!(sut.next(), None);
-        assert_eq!(sut.next_back(), None);
+    macro_rules! check_capacities {
+        ($check:ident) => {{
+            $check::<4>();
+            $check::<8>();
+            $check::<16>();
+        }};
     }
 
     #[test]
-    fn test_iter_forward() {
-        let mut list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
-        let sut = list.iter();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[0, 1, 2, 3, 4]);
+    fn iterates_forward_and_backward_across_chunks() {
+        fn check<const N: usize>() {
+            let list = ArrayList::<i32, N>::from([1, 2, 3, 4]);
+            let mut iter = list.iter();
 
-        list.clear();
-        let sut = list.iter();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[]);
-    }
-
-    #[test]
-    fn test_iter_backward() {
-        let mut list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
-        let sut = list.iter().rev();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[4, 3, 2, 1, 0]);
-
-        list.clear();
-        let sut = list.iter().rev();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[]);
-    }
-
-    #[test]
-    fn test_double_ended_iterator_works_correctly() {
-        let list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
-
-        let mut sut = list.iter();
-        assert_eq!(sut.next(), Some(&0));
-        assert_eq!(sut.next_back(), Some(&4));
-        assert_eq!(sut.next(), Some(&1));
-        assert_eq!(sut.next_back(), Some(&3));
-        assert_eq!(sut.next(), Some(&2));
-        assert_eq!(sut.next_back(), None);
-        assert_eq!(sut.next(), None);
-    }
-
-    #[test]
-    fn test_last_works_correctly() {
-        let array = [0, 1, 2, 3, 4];
-        let list = ArrayList::<usize, 2>::from(array);
-        let sut = list.iter();
-        assert_eq!(sut.last(), Some(&4));
-    }
-
-    #[test]
-    fn test_clone_works_correctly() {
-        let list = ArrayList::<usize, 2>::from([0, 1, 2, 3, 4]);
-
-        let mut base = list.iter();
-
-        let sut = base.clone();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[0, 1, 2, 3, 4]);
-
-        base.next();
-
-        let sut = base.clone();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[1, 2, 3, 4]);
-
-        base.next_back();
-
-        let sut = base.clone();
-        assert_eq!(&sut.copied().collect::<Vec<_>>(), &[1, 2, 3]);
-    }
-
-    #[quickcheck]
-    fn nightly_test_iter_behavioural(seed: Vec<i32>) {
-        fn _test<const N: usize>(expected: &[i32])
-        where
-            Usize<N>: ChunkCapacity,
-        {
-            let mut actual = ArrayList::<_, N>::new();
-            actual.extend(expected.iter().copied());
-
-            assert!(actual.iter().eq(expected.iter()));
-            assert!(actual.iter().rev().eq(expected.iter().rev()));
-            assert_eq!(
-                actual.iter().partial_cmp(expected.iter()),
-                Some(Ordering::Equal)
-            );
-            assert_eq!(actual.iter().count(), expected.iter().count());
-            assert_eq!(actual.iter().max(), expected.iter().max());
-            assert_eq!(actual.iter().min(), expected.iter().min());
-            assert_eq!(actual.iter().is_sorted(), expected.iter().is_sorted());
-            assert_eq!(actual.iter().copied().collect::<ArrayList<_, N>>(), actual);
+            assert_eq!(iter.size_hint(), (0, None));
+            assert_eq!(iter.next(), Some(&1));
+            assert_eq!(iter.next_back(), Some(&4));
+            assert_eq!(iter.nth(1), Some(&3));
+            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next_back(), None);
         }
 
-        _test::<1>(&seed);
-        _test::<2>(&seed);
-        _test::<3>(&seed);
-        _test::<4>(&seed);
-        _test::<5>(&seed);
-        _test::<8>(&seed);
-        _test::<16>(&seed);
-        _test::<32>(&seed);
-        _test::<64>(&seed);
-        _test::<128>(&seed);
-        _test::<256>(&seed);
-        _test::<512>(&seed);
+        check_capacities!(check);
+    }
+
+    #[test]
+    fn clone_preserves_remaining_iteration_state() {
+        fn check<const N: usize>() {
+            let list = ArrayList::<i32, N>::from([1, 2, 3, 4, 5]);
+            let mut iter = list.iter();
+
+            assert_eq!(iter.next(), Some(&1));
+
+            let cloned = iter.clone();
+            assert_eq!(iter.copied().collect::<Vec<_>>(), [2, 3, 4, 5]);
+            assert_eq!(cloned.copied().collect::<Vec<_>>(), [2, 3, 4, 5]);
+        }
+
+        check_capacities!(check);
+    }
+
+    #[test]
+    fn default_iterator_is_empty_and_fused() {
+        fn check<const N: usize>() {
+            let mut iter = super::Iter::<i32, N>::default();
+
+            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next_back(), None);
+        }
+
+        check_capacities!(check);
+    }
+
+    #[test]
+    fn debug_formats_remaining_items() {
+        fn check<const N: usize>() {
+            let list = ArrayList::<i32, N>::from([1, 2, 3]);
+            let mut iter = list.iter();
+
+            assert_eq!(iter.next(), Some(&1));
+
+            let debug = alloc::format!("{iter:?}");
+            assert!(debug.contains("Flatten"));
+            assert!(debug.contains('2'));
+            assert!(debug.contains('3'));
+        }
+
+        check_capacities!(check);
+    }
+
+    #[test]
+    fn iteration_order_is_stable_for_required_capacities() {
+        fn check<const N: usize>() {
+            let list = ArrayList::<i32, N>::from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+            assert_eq!(
+                list.iter().copied().collect::<Vec<_>>(),
+                [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+            );
+
+            let mut iter = list.iter();
+            assert_eq!(iter.next(), Some(&0));
+            assert_eq!(iter.next_back(), Some(&9));
+            assert_eq!(iter.nth(2), Some(&3));
+            assert_eq!(iter.nth_back(1), Some(&7));
+            assert_eq!(iter.copied().collect::<Vec<_>>(), [4, 5, 6]);
+        }
+
+        check_capacities!(check);
     }
 }

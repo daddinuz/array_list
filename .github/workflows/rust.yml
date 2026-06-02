@@ -10,13 +10,26 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        toolchain:
-          - nightly
     steps:
     - uses: actions/checkout@v4
+
     - name: Run tests
-      run: cargo +nightly test --verbose --features nightly_tests
+      run: cargo test --verbose
+  miri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+
+      - name: Install miri
+        run: rustup component add miri
+
+      - name: Run tests under miri
+        run: cargo miri test
